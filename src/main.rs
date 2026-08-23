@@ -2,6 +2,7 @@ mod add;
 mod cli;
 mod commit;
 mod index;
+mod log;
 mod objects;
 mod repository;
 mod status;
@@ -71,6 +72,10 @@ fn main() -> Result<()> {
             let repo_path = find_repo_path()?;
             let hash = commit::create_commit(&repo_path, message)?;
             println!("Created commit: {}", hash);
+        }
+        Commands::Log => {
+            let repo_path = find_repo_path()?;
+            log::show_log(&repo_path)?;
         }
     }
 

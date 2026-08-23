@@ -23,4 +23,5 @@ pub enum Commands {
         #[arg(short, long)]
         message: String,
     },
+    Log,
 }
