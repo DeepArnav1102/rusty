@@ -11,8 +11,16 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     Init,
-    HashObject { file: String },
-    Add { file: String },
+    HashObject {
+        file: String,
+    },
+    Add {
+        file: String,
+    },
     Status,
     WriteTree,
+    Commit {
+        #[arg(short, long)]
+        message: String,
+    },
 }

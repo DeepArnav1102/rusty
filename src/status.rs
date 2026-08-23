@@ -1,42 +1,46 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use crate::index::Index;
 use crate::objects;
 use std::path::Path;
-use std::fs;
+use walkdir::WalkDir;
 
-pub fn check_status(repo_path:&Path) -> Result<()> {
-    
-    let repo_root = repo_path.parent().context("Invalid repo path")?;
+pub fn check_status(repo_path: &Path) -> Result<()> {
+    let repo_root = repo_path
+        .parent()
+        .context("Invalid repo path")?;
 
     let index = Index::load(repo_path)?;
 
     let mut found_untracked = false;
-    let mut  found_modified = false;
+    let mut found_modified = false;
 
-    for entry in fs::read_dir(repo_root)? {
-
+    for entry in WalkDir::new(repo_root) {
         let entry = entry?;
         let path = entry.path();
 
-        if path.file_name().map(|name| name == ".rusty").unwrap_or(false){
+        if path.components().any(|component| {
+            component.as_os_str() == ".rusty"
+        }) {
             continue;
         }
 
-        if !path.is_file(){
+        if !path.is_file() {
             continue;
         }
-        
-        let relative_path = path.strip_prefix(repo_root)?.to_string_lossy().to_string();
 
-        if let Some(index_entry) = index.entries.get(&relative_path){
+        let relative_path = path
+            .strip_prefix(repo_root)?
+            .to_string_lossy()
+            .to_string();
 
-            let curr_hash = objects::hash_file(&path)?;
-            if curr_hash != index_entry.blob_hash{
+        if let Some(index_entry) = index.entries.get(&relative_path) {
+            let curr_hash = objects::hash_file(path)?;
+
+            if curr_hash != index_entry.blob_hash {
                 println!("Modified: {}", relative_path);
                 found_modified = true;
             }
-        }
-        else{
+        } else {
             println!("Untracked: {}", relative_path);
             found_untracked = true;
         }
@@ -45,6 +49,6 @@ pub fn check_status(repo_path:&Path) -> Result<()> {
     if !found_modified && !found_untracked {
         println!("Working tree is clean");
     }
-    
+
     Ok(())
 }
