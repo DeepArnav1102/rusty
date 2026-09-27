@@ -37,7 +37,6 @@ fn insert_into_tree(node: &mut Node, path_parts: &[&str], blob_hash: String) {
 
             if path_parts.len() == 1 {
                 children.insert(name.to_string(), Node::File { hash: blob_hash });
-
                 return;
             }
 
@@ -46,6 +45,12 @@ fn insert_into_tree(node: &mut Node, path_parts: &[&str], blob_hash: String) {
                 .or_insert_with(|| Node::Directory {
                     children: BTreeMap::new(),
                 });
+
+            if let Node::File { .. } = child {
+                *child = Node::Directory {
+                    children: BTreeMap::new(),
+                };
+            }
 
             insert_into_tree(child, &path_parts[1..], blob_hash);
         }
@@ -60,7 +65,11 @@ fn build_tree(index: &Index) -> Node {
     };
 
     for (path, entry) in &index.entries {
-        let parts: Vec<&str> = path.split('/').collect();
+        let normalized = path.replace('\\', "/");
+        let parts: Vec<&str> = normalized
+            .split('/')
+            .filter(|p| !p.is_empty() && *p != ".")
+            .collect();
 
         insert_into_tree(&mut root, &parts, entry.blob_hash.clone());
     }

@@ -1,9 +1,12 @@
 mod add;
+mod auth;
 mod cli;
 mod commit;
 mod index;
 mod log;
 mod objects;
+mod push;
+mod remote;
 mod repository;
 mod status;
 mod tree;
@@ -73,11 +76,50 @@ fn main() -> Result<()> {
             let hash = commit::create_commit(&repo_path, message)?;
             println!("Created commit: {}", hash);
         }
+
         Commands::Log => {
             let repo_path = find_repo_path()?;
             log::show_log(&repo_path)?;
+        }
+
+        Commands::Push => {
+            let repo_path = find_repo_path()?;
+            push::push(&repo_path)?;
+        }
+
+        Commands::Login { server } => {
+            auth::login(server.as_deref())?;
+        }
+
+        Commands::Logout => {
+            auth::logout()?;
+        }
+
+        Commands::Whoami => {
+            match auth::load_credentials()? {
+                Some(creds) => {
+                    println!("Logged in as: {}", creds.email);
+                    if let Some(username) = creds.username {
+                        println!("Username:     {}", username);
+                    }
+                    println!("Server:       {}", creds.server);
+                }
+                None => {
+                    println!("Not logged in. Run `rusty login` to authenticate.");
+                }
+            }
+        }
+
+        Commands::Remote { command } => {
+            let repo_path = find_repo_path()?;
+            match command {
+                cli::RemoteCommands::Add { name, url } => {
+                    remote::add_remote(&repo_path, &name, &url)?;
+                }
+            }
         }
     }
 
     Ok(())
 }
+

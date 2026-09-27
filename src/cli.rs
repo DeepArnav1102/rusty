@@ -24,4 +24,20 @@ pub enum Commands {
         message: String,
     },
     Log,
+    Push,
+    Login {
+        #[arg(short, long)]
+        server: Option<String>,
+    },
+    Logout,
+    Whoami,
+    Remote {
+        #[command(subcommand)]
+        command: RemoteCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RemoteCommands {
+    Add { name: String, url: String },
 }
