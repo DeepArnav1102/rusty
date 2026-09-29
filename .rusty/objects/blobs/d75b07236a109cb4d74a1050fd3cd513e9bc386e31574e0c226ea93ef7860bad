@@ -2,7 +2,6 @@ mod add;
 mod auth;
 mod cli;
 mod commit;
-mod fetch;
 mod index;
 mod log;
 mod objects;
@@ -11,8 +10,6 @@ mod remote;
 mod repository;
 mod status;
 mod tree;
-mod tui;
-mod checkout;
 
 use anyhow::Result;
 use clap::Parser;
@@ -41,16 +38,7 @@ fn find_repo_path() -> Result<PathBuf> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let cmd = match cli.command {
-        Some(cmd) => cmd,
-        None => Commands::Tui,
-    };
-
-    match cmd {
-        Commands::Tui => {
-            tui::run_tui()?;
-        }
-
+    match cli.command {
         Commands::Init => {
             repository::init()?;
         }
@@ -85,28 +73,18 @@ fn main() -> Result<()> {
 
         Commands::Commit { message } => {
             let repo_path = find_repo_path()?;
-
             let hash = commit::create_commit(&repo_path, message)?;
-
             println!("Created commit: {}", hash);
         }
 
         Commands::Log => {
             let repo_path = find_repo_path()?;
-
             log::show_log(&repo_path)?;
         }
 
         Commands::Push => {
             let repo_path = find_repo_path()?;
-
             push::push(&repo_path)?;
-        }
-
-        Commands::Fetch => {
-            let repo_path = find_repo_path()?;
-
-            fetch::fetch(&repo_path)?;
         }
 
         Commands::Login { server } => {
@@ -117,36 +95,31 @@ fn main() -> Result<()> {
             auth::logout()?;
         }
 
-        Commands::Whoami => match auth::load_credentials()? {
-            Some(creds) => {
-                println!("Logged in as: {}", creds.email);
-
-                if let Some(username) = creds.username {
-                    println!("Username:     {}", username);
+        Commands::Whoami => {
+            match auth::load_credentials()? {
+                Some(creds) => {
+                    println!("Logged in as: {}", creds.email);
+                    if let Some(username) = creds.username {
+                        println!("Username:     {}", username);
+                    }
+                    println!("Server:       {}", creds.server);
                 }
-
-                println!("Server:       {}", creds.server);
+                None => {
+                    println!("Not logged in. Run `rusty login` to authenticate.");
+                }
             }
-
-            None => {
-                println!("Not logged in. Run `rusty login` to authenticate.");
-            }
-        },
+        }
 
         Commands::Remote { command } => {
             let repo_path = find_repo_path()?;
-
             match command {
                 cli::RemoteCommands::Add { name, url } => {
                     remote::add_remote(&repo_path, &name, &url)?;
                 }
             }
         }
-        Commands::Checkout { target } => {
-            let repo_path = find_repo_path()?;
-            checkout::checkout(&repo_path, &target)?;
-        }
     }
 
     Ok(())
 }
+

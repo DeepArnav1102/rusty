@@ -88,30 +88,13 @@ pub fn login(server_url_opt: Option<&str>) -> Result<()> {
     let client = reqwest::blocking::Client::new();
     let login_url = format!("{}/api/v1/auth/cli/login", server_url);
 
-    let mut response = client
+    let response = client
         .post(&login_url)
         .json(&serde_json::json!({
             "email": email,
             "pat": token
         }))
         .send();
-
-    // If 404, try fallback endpoint /api/v1/auth/cli-login
-    if let Ok(ref res) = response {
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
-            let alt_cli_url = format!("{}/api/v1/auth/cli-login", server_url);
-            if let Ok(alt_res) = client
-                .post(&alt_cli_url)
-                .json(&serde_json::json!({
-                    "email": email,
-                    "pat": token
-                }))
-                .send()
-            {
-                response = Ok(alt_res);
-            }
-        }
-    }
 
     let (is_success, body_text, username) = match response {
         Ok(res) => {
@@ -122,16 +105,7 @@ pub fn login(server_url_opt: Option<&str>) -> Result<()> {
                 let username = parsed["data"]["user"]["username"].as_str().map(|s| s.to_string());
                 (true, text, username)
             } else {
-                let err_msg = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if let Some(msg) = parsed["message"].as_str() {
-                        msg.to_string()
-                    } else {
-                        text
-                    }
-                } else {
-                    text
-                };
-                (false, err_msg, None)
+                (false, text, None)
             }
         }
         Err(err) => {

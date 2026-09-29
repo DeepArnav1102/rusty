@@ -59,12 +59,9 @@ pub fn get_remote(repo_path: &Path, name: &str) -> Result<String> {
     let data = fs::read_to_string(config_path)?;
     let config: serde_json::Value = serde_json::from_str(&data)?;
 
-    let url = config["remotes"][name].as_str().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Remote '{}' not found. Run `rusty remote add origin <URL>` first.",
-            name
-        )
-    })?;
+    let url = config["remotes"][name]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Remote '{}' not found. Run `rusty remote add origin <URL>` first.", name))?;
 
     Ok(url.to_string())
 }
@@ -103,13 +100,7 @@ pub fn send_object(
                 body_str
             );
         }
-        anyhow::bail!(
-            "Failed to send {} {}: ({}) {}",
-            object_type,
-            hash,
-            status,
-            body_str
-        );
+        anyhow::bail!("Failed to send {} {}: ({}) {}", object_type, hash, status, body_str);
     }
 
     Ok(())
@@ -164,80 +155,8 @@ pub fn update_ref(
     if !response.status().is_success() {
         let status = response.status();
         let body_str = response.text().unwrap_or_default();
-        anyhow::bail!(
-            "Failed to update remote branch reference ({}): {}",
-            status,
-            body_str
-        );
+        anyhow::bail!("Failed to update remote branch reference ({}): {}", status, body_str);
     }
 
     Ok(())
-}
-
-pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String> {
-    let client = Client::new();
-
-    let url = format!("{}/refs/{}", origin.trim_end_matches('/'), branch);
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", creds.token))
-        .header("X-Rusty-Email", &creds.email)
-        .header("X-Rusty-Token", &creds.token)
-        .send()?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-
-        anyhow::bail!("Failed to get remote ref {} ({}): {}", branch, status, body);
-    }
-
-    let data: serde_json::Value = response.json()?;
-
-    let hash = data["commitHash"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Remote response does not contain commitHash"))?;
-
-    Ok(hash.to_string())
-}
-
-pub fn get_object(
-    origin: &str,
-    hash: &str,
-    creds: &Credentials,
-) -> Result<serde_json::Value> {
-    let client = Client::new();
-
-    let url = format!(
-        "{}/objects/{}",
-        origin.trim_end_matches('/'),
-        hash
-    );
-
-    let response = client
-        .get(&url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", creds.token),
-        )
-        .header("X-Rusty-Email", &creds.email)
-        .header("X-Rusty-Token", &creds.token)
-        .send()?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-
-        anyhow::bail!(
-            "Failed to fetch object {} ({}): {}",
-            hash,
-            status,
-            body
-        );
-    }
-
-    let data: serde_json::Value = response.json()?;
-
-    Ok(data)
 }

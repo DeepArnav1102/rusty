@@ -5,13 +5,11 @@ use clap::{Parser, Subcommand};
 #[command(about = "Git like version control")]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    pub command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Launch interactive Terminal UI dashboard
-    Tui,
     Init,
     HashObject {
         file: String,
@@ -27,11 +25,6 @@ pub enum Commands {
     },
     Log,
     Push,
-    Fetch,
-    Checkout {
-        target: String,
-    },
-
     Login {
         #[arg(short, long)]
         server: Option<String>,
