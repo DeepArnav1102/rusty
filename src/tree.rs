@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -127,4 +127,52 @@ pub fn write_tree(repo_path: &Path) -> Result<String> {
     let root_hash = write_node(&root, repo_path)?;
 
     Ok(root_hash)
+}
+
+pub fn load_tree_files(repo_path: &Path, tree_hash: &str) -> Result<BTreeMap<String, String>> {
+    let mut files = BTreeMap::new();
+    collect_tree_files(repo_path, tree_hash, "", &mut files)?;
+    Ok(files)
+}
+
+fn collect_tree_files(
+    repo_path: &Path,
+    tree_hash: &str,
+    prefix: &str,
+    files: &mut BTreeMap<String, String>,
+) -> Result<()> {
+    let tree_path = repo_path.join("objects").join("trees").join(tree_hash);
+    if !tree_path.exists() {
+        anyhow::bail!("Tree object not found: {}", tree_hash);
+    }
+
+    let data = fs::read(&tree_path)?;
+    let tree: Tree = serde_json::from_slice(&data)
+        .with_context(|| format!("Invalid tree object {}", tree_hash))?;
+
+    for entry in tree.entries {
+        let relative_path = if prefix.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{}/{}", prefix, entry.name)
+        };
+
+        match entry.object_type.as_str() {
+            "blob" => {
+                files.insert(relative_path, entry.object_hash);
+            }
+            "tree" => {
+                collect_tree_files(repo_path, &entry.object_hash, &relative_path, files)?;
+            }
+            other => {
+                anyhow::bail!(
+                    "Unknown tree entry type '{}' for '{}'",
+                    other,
+                    relative_path
+                );
+            }
+        }
+    }
+
+    Ok(())
 }

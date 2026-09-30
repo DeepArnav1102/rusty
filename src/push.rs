@@ -39,20 +39,17 @@ pub fn push(repo_path: &Path) -> Result<()> {
     let mut sent = HashSet::new();
     println!("Pushing objects to {}...", origin);
 
-    send_object(
-        repo_path,
-        &origin,
-        "commit",
-        commit_hash,
-        &mut sent,
-        &creds,
-    )?;
+    send_object(repo_path, &origin, "commit", commit_hash, &mut sent, &creds)?;
 
     // Update remote branch ref
     remote::update_ref(&origin, branch, commit_hash, &creds)?;
 
     let clean_branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
-    println!("\n✓ Pushed commit {} to branch '{}'", &commit_hash[..8.min(commit_hash.len())], clean_branch);
+    println!(
+        "\n✓ Pushed commit {} to branch '{}'",
+        &commit_hash[..8.min(commit_hash.len())],
+        clean_branch
+    );
     println!("  Remote: {}", origin);
     println!("  View your code on the website repository page.\n");
 
@@ -80,58 +77,39 @@ fn send_object(
         _ => anyhow::bail!("Unknown object type: {}", object_type),
     };
 
-    let object_path = repo_path
-        .join("objects")
-        .join(object_dir)
-        .join(hash);
+    let object_path = repo_path.join("objects").join(object_dir).join(hash);
 
-    let data = fs::read(&object_path)
-        .with_context(|| {
-            format!("Cannot read {} {}", object_type, hash)
-        })?;
+    let data =
+        fs::read(&object_path).with_context(|| format!("Cannot read {} {}", object_type, hash))?;
 
     if remote::object_exists(origin, hash, creds)? {
-        println!("  ✓ {} {} (already exists on remote)", object_type, &hash[..8.min(hash.len())]);
-    } else {
-        remote::send_object(
-            origin,
+        println!(
+            "  ✓ {} {} (already exists on remote)",
             object_type,
-            hash,
-            &data,
-            creds,
-        )?;
-        println!("  + uploaded {} {}", object_type, &hash[..8.min(hash.len())]);
+            &hash[..8.min(hash.len())]
+        );
+    } else {
+        remote::send_object(origin, object_type, hash, &data, creds)?;
+        println!(
+            "  + uploaded {} {}",
+            object_type,
+            &hash[..8.min(hash.len())]
+        );
     }
 
     match object_type {
         "commit" => {
-            let commit: Commit =
-                serde_json::from_slice(&data)?;
+            let commit: Commit = serde_json::from_slice(&data)?;
 
-            send_object(
-                repo_path,
-                origin,
-                "tree",
-                &commit.tree,
-                sent,
-                creds,
-            )?;
+            send_object(repo_path, origin, "tree", &commit.tree, sent, creds)?;
 
             if let Some(parent) = commit.parent {
-                send_object(
-                    repo_path,
-                    origin,
-                    "commit",
-                    &parent,
-                    sent,
-                    creds,
-                )?;
+                send_object(repo_path, origin, "commit", &parent, sent, creds)?;
             }
         }
 
         "tree" => {
-            let tree: Tree =
-                serde_json::from_slice(&data)?;
+            let tree: Tree = serde_json::from_slice(&data)?;
 
             for entry in tree.entries {
                 send_object(

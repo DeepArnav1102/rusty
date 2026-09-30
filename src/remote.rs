@@ -202,25 +202,14 @@ pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String
     Ok(hash.to_string())
 }
 
-pub fn get_object(
-    origin: &str,
-    hash: &str,
-    creds: &Credentials,
-) -> Result<serde_json::Value> {
+pub fn get_object(origin: &str, hash: &str, creds: &Credentials) -> Result<serde_json::Value> {
     let client = Client::new();
 
-    let url = format!(
-        "{}/objects/{}",
-        origin.trim_end_matches('/'),
-        hash
-    );
+    let url = format!("{}/objects/{}", origin.trim_end_matches('/'), hash);
 
     let response = client
         .get(&url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", creds.token),
-        )
+        .header("Authorization", format!("Bearer {}", creds.token))
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
         .send()?;
@@ -229,12 +218,7 @@ pub fn get_object(
         let status = response.status();
         let body = response.text().unwrap_or_default();
 
-        anyhow::bail!(
-            "Failed to fetch object {} ({}): {}",
-            hash,
-            status,
-            body
-        );
+        anyhow::bail!("Failed to fetch object {} ({}): {}", hash, status, body);
     }
 
     let data: serde_json::Value = response.json()?;

@@ -1,14 +1,12 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap,
-    },
-    Frame,
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::tui::app::{ActiveModal, App, AuthField, RemoteField, COMMANDS};
+use crate::tui::app::{ActiveModal, App, AuthField, COMMANDS, RemoteField};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let size = f.area();
@@ -54,8 +52,18 @@ fn draw_header(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Title Block
     let title_line = Line::from(vec![
-        Span::styled("  ⚡ RUSTY ", Style::default().fg(Color::Rgb(255, 140, 0)).add_modifier(Modifier::BOLD)),
-        Span::styled("VCS DASHBOARD", Style::default().fg(Color::Rgb(80, 250, 123)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  ⚡ RUSTY ",
+            Style::default()
+                .fg(Color::Rgb(255, 140, 0))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "VCS DASHBOARD",
+            Style::default()
+                .fg(Color::Rgb(80, 250, 123))
+                .add_modifier(Modifier::BOLD),
+        ),
     ]);
     let title_block = Paragraph::new(title_line).block(
         Block::default()
@@ -67,14 +75,24 @@ fn draw_header(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Repository status & branch
     let repo_status_span = if app.repo_detected {
-        Span::styled("● Repo OK", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "● Repo OK",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
-        Span::styled("○ No Repo (.rusty)", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "○ No Repo (.rusty)",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )
     };
 
     let branch_span = Span::styled(
         format!(" ⎇ branch: [{}]", app.current_branch),
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
     );
 
     let status_line = Line::from(vec![
@@ -97,13 +115,28 @@ fn draw_header(f: &mut Frame, app: &mut App, area: Rect) {
         let name = creds.username.as_deref().unwrap_or(&creds.email);
         Line::from(vec![
             Span::styled(" 🔒 ", Style::default().fg(Color::Green)),
-            Span::styled(format!("{name}"), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{name}"),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" [Tab: Auth]", Style::default().fg(Color::DarkGray)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" ⚠ Not Logged In ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled("[Tab: Login]", Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED)),
+            Span::styled(
+                " ⚠ Not Logged In ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "[Tab: Login]",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
         ])
     };
 
@@ -127,7 +160,7 @@ fn draw_body(f: &mut Frame, app: &mut App, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Length(32), // Command Palette (Navigation)
-            Constraint::Min(40),   // Right side (Command Info Box + Activity Console)
+            Constraint::Min(40),    // Right side (Command Info Box + Activity Console)
         ])
         .split(area);
 
@@ -159,8 +192,18 @@ fn draw_command_list(f: &mut Frame, app: &App, area: Rect) {
             };
 
             let line = Line::from(vec![
-                Span::styled(prefix, Style::default().fg(Color::Rgb(255, 121, 198)).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("[{}] ", cmd.shortcut), Style::default().fg(border_bracket).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    prefix,
+                    Style::default()
+                        .fg(Color::Rgb(255, 121, 198))
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("[{}] ", cmd.shortcut),
+                    Style::default()
+                        .fg(border_bracket)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(cmd.name, text_style),
             ]);
 
@@ -170,7 +213,12 @@ fn draw_command_list(f: &mut Frame, app: &App, area: Rect) {
 
     let list_widget = List::new(items).block(
         Block::default()
-            .title(Span::styled(" ⚡ COMMAND PALETTE [↑/↓] ", Style::default().fg(Color::Rgb(189, 147, 249)).add_modifier(Modifier::BOLD)))
+            .title(Span::styled(
+                " ⚡ COMMAND PALETTE [↑/↓] ",
+                Style::default()
+                    .fg(Color::Rgb(189, 147, 249))
+                    .add_modifier(Modifier::BOLD),
+            ))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Rgb(139, 92, 246))),
@@ -197,16 +245,36 @@ fn draw_command_info(f: &mut Frame, app: &App, area: Rect) {
 
     let info_text = vec![
         Line::from(vec![
-            Span::styled("Command: ", Style::default().fg(Color::Rgb(139, 233, 253)).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("rusty {}", current_cmd.name.to_lowercase()), Style::default().fg(Color::Rgb(80, 250, 123)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Command: ",
+                Style::default()
+                    .fg(Color::Rgb(139, 233, 253))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("rusty {}", current_cmd.name.to_lowercase()),
+                Style::default()
+                    .fg(Color::Rgb(80, 250, 123))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw("   "),
             Span::styled("Shortcut: ", Style::default().fg(Color::Rgb(139, 233, 253))),
-            Span::styled(format!("'{}'", current_cmd.shortcut), Style::default().fg(Color::Rgb(255, 184, 108)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("'{}'", current_cmd.shortcut),
+                Style::default()
+                    .fg(Color::Rgb(255, 184, 108))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" or [Enter]", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Details: ", Style::default().fg(Color::Rgb(241, 250, 140)).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Details: ",
+                Style::default()
+                    .fg(Color::Rgb(241, 250, 140))
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(current_cmd.description, Style::default().fg(Color::White)),
         ]),
     ];
@@ -214,7 +282,12 @@ fn draw_command_info(f: &mut Frame, app: &App, area: Rect) {
     let info_block = Paragraph::new(info_text)
         .block(
             Block::default()
-                .title(Span::styled(" 💡 COMMAND INFO ", Style::default().fg(Color::Rgb(241, 250, 140)).add_modifier(Modifier::BOLD)))
+                .title(Span::styled(
+                    " 💡 COMMAND INFO ",
+                    Style::default()
+                        .fg(Color::Rgb(241, 250, 140))
+                        .add_modifier(Modifier::BOLD),
+                ))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::Rgb(255, 184, 108))),
@@ -252,24 +325,50 @@ fn draw_console(f: &mut Frame, app: &mut App, area: Rect) {
             .iter()
             .map(|entry| {
                 if entry.contains("[SUCCESS]") {
-                    Line::from(Span::styled(entry, Style::default().fg(Color::Rgb(80, 250, 123))))
+                    Line::from(Span::styled(
+                        entry,
+                        Style::default().fg(Color::Rgb(80, 250, 123)),
+                    ))
                 } else if entry.contains("[ERROR]") {
-                    Line::from(Span::styled(entry, Style::default().fg(Color::Rgb(255, 85, 85)).add_modifier(Modifier::BOLD)))
+                    Line::from(Span::styled(
+                        entry,
+                        Style::default()
+                            .fg(Color::Rgb(255, 85, 85))
+                            .add_modifier(Modifier::BOLD),
+                    ))
                 } else if entry.contains("[WARN]") {
-                    Line::from(Span::styled(entry, Style::default().fg(Color::Rgb(255, 184, 108))))
+                    Line::from(Span::styled(
+                        entry,
+                        Style::default().fg(Color::Rgb(255, 184, 108)),
+                    ))
                 } else if entry.contains("[SYSTEM]") {
-                    Line::from(Span::styled(entry, Style::default().fg(Color::Rgb(189, 147, 249))))
+                    Line::from(Span::styled(
+                        entry,
+                        Style::default().fg(Color::Rgb(189, 147, 249)),
+                    ))
                 } else {
-                    Line::from(Span::styled(entry, Style::default().fg(Color::Rgb(248, 248, 242))))
+                    Line::from(Span::styled(
+                        entry,
+                        Style::default().fg(Color::Rgb(248, 248, 242)),
+                    ))
                 }
             })
             .collect()
     };
 
     let title_line = Line::from(vec![
-        Span::styled(" 📟 EXECUTION LOG & ACTIVITY ", Style::default().fg(Color::Rgb(80, 250, 123)).add_modifier(Modifier::BOLD)),
         Span::styled(
-            if total_logs > 0 { format!(" {} entries ", total_logs) } else { "".to_string() },
+            " 📟 EXECUTION LOG & ACTIVITY ",
+            Style::default()
+                .fg(Color::Rgb(80, 250, 123))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            if total_logs > 0 {
+                format!(" {} entries ", total_logs)
+            } else {
+                "".to_string()
+            },
             Style::default().fg(Color::DarkGray),
         ),
     ]);
@@ -312,45 +411,76 @@ fn draw_console(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(bar_block, btn_area);
 
     // The button itself — rendered as a styled paragraph inside btn_rect
-    let btn_para = Paragraph::new(Line::from(vec![
-        Span::styled(
-            btn_label,
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Rgb(255, 120, 60))
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
+    let btn_para = Paragraph::new(Line::from(vec![Span::styled(
+        btn_label,
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(255, 120, 60))
+            .add_modifier(Modifier::BOLD),
+    )]))
     .alignment(Alignment::Center);
 
     f.render_widget(btn_para, btn_rect);
 }
 
-
 fn draw_footer(f: &mut Frame, area: Rect) {
     let keys = Line::from(vec![
-        Span::styled(" [↑/↓] ", Style::default().fg(Color::Black).bg(Color::Rgb(189, 147, 249)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [↑/↓] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(189, 147, 249))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Navigate   "),
-        Span::styled(" [Enter] ", Style::default().fg(Color::Black).bg(Color::Rgb(80, 250, 123)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [Enter] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(80, 250, 123))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Run   "),
-        Span::styled(" [x] ", Style::default().fg(Color::Black).bg(Color::Rgb(255, 184, 108)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [x] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(255, 184, 108))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Clear Log   "),
-        Span::styled(" [Tab] ", Style::default().fg(Color::Black).bg(Color::Rgb(255, 140, 0)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [Tab] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(255, 140, 0))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Auth   "),
-        Span::styled(" [?] ", Style::default().fg(Color::Black).bg(Color::Rgb(139, 233, 253)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [?] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(139, 233, 253))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Help   "),
-        Span::styled(" [q] ", Style::default().fg(Color::Black).bg(Color::Rgb(255, 85, 85)).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " [q] ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Rgb(255, 85, 85))
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Quit "),
     ]);
 
-    let footer_block = Paragraph::new(keys)
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(98, 114, 164))),
-        );
+    let footer_block = Paragraph::new(keys).alignment(Alignment::Center).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Rgb(98, 114, 164))),
+    );
 
     f.render_widget(footer_block, area);
 }
@@ -430,7 +560,10 @@ fn render_input_box(
         spans
     } else {
         let display_str: String = chars.into_iter().collect();
-        vec![Span::styled(display_str, Style::default().fg(Color::Rgb(200, 200, 220)))]
+        vec![Span::styled(
+            display_str,
+            Style::default().fg(Color::Rgb(200, 200, 220)),
+        )]
     };
 
     let p = Paragraph::new(Line::from(display_spans))
@@ -439,7 +572,9 @@ fn render_input_box(
             Block::default()
                 .title(Span::styled(
                     format!(" {} ", title),
-                    Style::default().fg(title_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(title_color)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -450,7 +585,8 @@ fn render_input_box(
 
     // Position the native hardware terminal cursor
     if is_focused {
-        let cursor_col = (area.x + 1 + cursor_pos as u16).min(area.x + area.width.saturating_sub(2));
+        let cursor_col =
+            (area.x + 1 + cursor_pos as u16).min(area.x + area.width.saturating_sub(2));
         let cursor_row = area.y + 1;
         f.set_cursor_position((cursor_col, cursor_row));
     }
@@ -461,7 +597,12 @@ fn draw_auth_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
 
     let modal_block = Block::default()
-        .title(Span::styled(" 🔑 Rusty VCS Authentication Layer ", Style::default().fg(Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " 🔑 Rusty VCS Authentication Layer ",
+            Style::default()
+                .fg(Color::Rgb(255, 215, 0))
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Rgb(255, 140, 0)))
@@ -483,8 +624,14 @@ fn draw_auth_modal(f: &mut Frame, app: &App) {
         .split(area);
 
     let note = Paragraph::new(vec![
-        Line::from(Span::styled("Connect CLI to your Rusty VCS account using Personal Access Token (PAT).", Style::default().fg(Color::Rgb(200, 200, 220)))),
-        Line::from(Span::styled("You can generate tokens in your web user profile settings.", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            "Connect CLI to your Rusty VCS account using Personal Access Token (PAT).",
+            Style::default().fg(Color::Rgb(200, 200, 220)),
+        )),
+        Line::from(Span::styled(
+            "You can generate tokens in your web user profile settings.",
+            Style::default().fg(Color::DarkGray),
+        )),
     ]);
     f.render_widget(note, inner[0]);
 
@@ -520,17 +667,33 @@ fn draw_auth_modal(f: &mut Frame, app: &App) {
 
     // Error or status
     if let Some(ref err) = app.auth_error {
-        let err_p = Paragraph::new(Span::styled(format!("✖ {}", err), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+        let err_p = Paragraph::new(Span::styled(
+            format!("✖ {}", err),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
         f.render_widget(err_p, inner[4]);
     }
 
     // Modal Actions
     let actions = Line::from(vec![
-        Span::styled("[Tab]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Tab]",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Next Field   "),
-        Span::styled("[Enter]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Enter]",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Verify & Login   "),
-        Span::styled("[Esc]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Esc]",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Cancel / Close"),
     ]);
     let actions_p = Paragraph::new(actions).alignment(Alignment::Center);
@@ -542,7 +705,12 @@ fn draw_add_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
 
     let modal_block = Block::default()
-        .title(Span::styled(" ➕ Stage Files (rusty add) ", Style::default().fg(Color::Rgb(80, 250, 123)).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " ➕ Stage Files (rusty add) ",
+            Style::default()
+                .fg(Color::Rgb(80, 250, 123))
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Rgb(80, 250, 123)))
@@ -578,12 +746,23 @@ fn draw_add_modal(f: &mut Frame, app: &App) {
     );
 
     let actions = Line::from(vec![
-        Span::styled("[Enter]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Enter]",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Stage Path   "),
-        Span::styled("[Esc]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Esc]",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Cancel"),
     ]);
-    f.render_widget(Paragraph::new(actions).alignment(Alignment::Center), inner[3]);
+    f.render_widget(
+        Paragraph::new(actions).alignment(Alignment::Center),
+        inner[3],
+    );
 }
 
 fn draw_commit_modal(f: &mut Frame, app: &App) {
@@ -591,7 +770,12 @@ fn draw_commit_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
 
     let modal_block = Block::default()
-        .title(Span::styled(" 💾 Create Commit (rusty commit) ", Style::default().fg(Color::Rgb(189, 147, 249)).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " 💾 Create Commit (rusty commit) ",
+            Style::default()
+                .fg(Color::Rgb(189, 147, 249))
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Rgb(189, 147, 249)))
@@ -627,12 +811,23 @@ fn draw_commit_modal(f: &mut Frame, app: &App) {
     );
 
     let actions = Line::from(vec![
-        Span::styled("[Enter]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Enter]",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Create Commit   "),
-        Span::styled("[Esc]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Esc]",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Cancel"),
     ]);
-    f.render_widget(Paragraph::new(actions).alignment(Alignment::Center), inner[3]);
+    f.render_widget(
+        Paragraph::new(actions).alignment(Alignment::Center),
+        inner[3],
+    );
 }
 
 fn draw_remote_add_modal(f: &mut Frame, app: &App) {
@@ -640,7 +835,12 @@ fn draw_remote_add_modal(f: &mut Frame, app: &App) {
     f.render_widget(Clear, area);
 
     let modal_block = Block::default()
-        .title(Span::styled(" 🌐 Configure Remote (rusty remote add) ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " 🌐 Configure Remote (rusty remote add) ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Cyan))
@@ -680,14 +880,30 @@ fn draw_remote_add_modal(f: &mut Frame, app: &App) {
     );
 
     let actions = Line::from(vec![
-        Span::styled("[Tab]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Tab]",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Switch Field   "),
-        Span::styled("[Enter]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Enter]",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Save Remote   "),
-        Span::styled("[Esc]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[Esc]",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Cancel"),
     ]);
-    f.render_widget(Paragraph::new(actions).alignment(Alignment::Center), inner[3]);
+    f.render_widget(
+        Paragraph::new(actions).alignment(Alignment::Center),
+        inner[3],
+    );
 }
 
 fn draw_help_modal(f: &mut Frame) {
@@ -695,7 +911,12 @@ fn draw_help_modal(f: &mut Frame) {
     f.render_widget(Clear, area);
 
     let modal_block = Block::default()
-        .title(Span::styled(" ❓ Rusty VCS TUI Help & Cheatsheet ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " ❓ Rusty VCS TUI Help & Cheatsheet ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(Color::Yellow))
@@ -704,18 +925,30 @@ fn draw_help_modal(f: &mut Frame) {
     f.render_widget(modal_block, area);
 
     let help_lines = vec![
-        Line::from(Span::styled("Keyboard Shortcuts:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Keyboard Shortcuts:",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  • ↑ / ↓ or k / j   : Move selection in Command Palette"),
         Line::from("  • Enter            : Run selected command"),
         Line::from("  • x                : Clear Execution Log & Activity"),
         Line::from("  • Tab              : Open / toggle Authentication modal"),
-        Line::from("  • s, a, c, l, p, w : Quick trigger for Status, Add, Commit, Log, Push, WriteTree"),
+        Line::from(
+            "  • s, a, c, l, p, w : Quick trigger for Status, Add, Commit, Log, Push, WriteTree",
+        ),
         Line::from("  • i, r, u, o       : Quick trigger for Init, Remote, Whoami, Logout"),
         Line::from("  • ? / h            : Open this help screen"),
         Line::from("  • Esc              : Close active popup / modal"),
         Line::from("  • q / Ctrl+C       : Exit Rusty TUI"),
         Line::from(""),
-        Line::from(Span::styled("Text Editing in Modals:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Text Editing in Modals:",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  • Type characters freely; cursor navigates with ← / →, Home / End"),
         Line::from("  • Backspace / Delete: Erase characters; Ctrl+w / Ctrl+u: Erase word / line"),
         Line::from("  • Pasting from clipboard is supported directly into input fields"),

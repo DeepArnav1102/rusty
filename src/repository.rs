@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn init() -> Result<()> {
     let current_dir = std::env::current_dir()?;
@@ -33,4 +33,30 @@ pub fn init() -> Result<()> {
     );
 
     Ok(())
+}
+
+pub fn get_head_commit(repo_path: &Path) -> Result<Option<String>> {
+    let head_path = repo_path.join("HEAD");
+    if !head_path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&head_path)?;
+    let content = content.trim();
+    if let Some(branch_ref) = content.strip_prefix("ref: ") {
+        let branch_ref = branch_ref.trim();
+        let branch_path = repo_path.join(branch_ref);
+        if branch_path.exists() {
+            let hash = fs::read_to_string(&branch_path)?;
+            let hash = hash.trim();
+            if !hash.is_empty() {
+                return Ok(Some(hash.to_string()));
+            }
+        }
+        Ok(None)
+    } else if !content.is_empty() {
+        // Detached HEAD
+        Ok(Some(content.to_string()))
+    } else {
+        Ok(None)
+    }
 }

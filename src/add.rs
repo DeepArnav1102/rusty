@@ -1,72 +1,150 @@
-use anyhow::{Context, Result};
+use crate::ignore::RustyIgnore;
 use crate::index::Index;
 use crate::objects;
+use anyhow::{Context, Result};
 use std::path::Path;
 use walkdir::WalkDir;
 
 pub fn add_file(file_path: &Path, repo_path: &Path) -> Result<()> {
     let repo_root = repo_path
         .parent()
-        .context("Invalid repository path")?;
+        .context("Invalid repository path")?
+        .canonicalize()?;
 
-    let full_path = if file_path.is_absolute() {
-        file_path.to_path_buf()
-    } else {
-        std::env::current_dir()?.join(file_path)
-    };
-
-    if !full_path.exists() {
-        anyhow::bail!("Path not found: {}", full_path.display());
-    }
-
-    let full_path = full_path.canonicalize()?;
-    let repo_root = repo_root.canonicalize()?;
-
-    if !full_path.starts_with(&repo_root) {
-        anyhow::bail!("File is outside the repository");
-    }
-
+    let ignore = RustyIgnore::load(&repo_root);
     let mut index = Index::load(repo_path)?;
     let mut added_count = 0;
 
-    if full_path.is_dir() {
-        for entry in WalkDir::new(&full_path) {
-            let entry = entry?;
-            let path = entry.path();
+    let cwd = std::env::current_dir()?.canonicalize()?;
+    let target_path = if file_path.is_absolute() {
+        file_path.to_path_buf()
+    } else {
+        cwd.join(file_path)
+    };
 
-            // Skip .rusty, .git, and common ignore folders
-            if path.components().any(|c| {
-                let s = c.as_os_str().to_string_lossy();
-                s == ".rusty" || s == ".git" || s == "target" || s == "node_modules"
-            }) {
-                continue;
+    if target_path.exists() {
+        let canonical_target = target_path.canonicalize()?;
+        if !canonical_target.starts_with(&repo_root) {
+            anyhow::bail!("File is outside the repository");
+        }
+
+        if canonical_target.is_dir() {
+            let rel_dir = if canonical_target == repo_root {
+                String::new()
+            } else {
+                canonical_target
+                    .strip_prefix(&repo_root)?
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            };
+
+            // 1. Walk working tree to stage added / modified files
+            for entry in WalkDir::new(&canonical_target) {
+                let entry = entry?;
+                let path = entry.path();
+
+                if !path.is_file() {
+                    continue;
+                }
+
+                let canonical = match path.canonicalize() {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let rel_path = canonical
+                    .strip_prefix(&repo_root)?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+
+                // Hardcoded internal ignores
+                if rel_path.split('/').any(|c| c == ".rusty" || c == ".git") {
+                    continue;
+                }
+
+                // If not already tracked, respect .rustyignore
+                if !index.contains(&rel_path) && ignore.is_ignored(&rel_path, false) {
+                    continue;
+                }
+
+                let blob_hash = objects::hash_objects(&canonical, repo_path)?;
+                index.add(rel_path.clone(), blob_hash);
+                println!("Added {}", rel_path);
+                added_count += 1;
             }
 
-            if !path.is_file() {
-                continue;
+            // 2. Stage deletions: remove tracked files in this directory that no longer exist on disk
+            let mut to_remove = Vec::new();
+            for path in index.entries.keys() {
+                let in_scope = if rel_dir.is_empty() {
+                    true
+                } else {
+                    path == &rel_dir || path.starts_with(&format!("{}/", rel_dir))
+                };
+
+                if in_scope {
+                    let disk_path = repo_root.join(path);
+                    if !disk_path.exists() {
+                        to_remove.push(path.clone());
+                    }
+                }
             }
 
-            let canonical = path.canonicalize()?;
-            let relative_path = canonical
+            for path in to_remove {
+                index.remove(&path);
+                println!("Removed {}", path);
+                added_count += 1;
+            }
+        } else {
+            // Single file exists on disk
+            let rel_path = canonical_target
                 .strip_prefix(&repo_root)?
                 .to_string_lossy()
                 .replace('\\', "/");
 
-            let blob_hash = objects::hash_objects(&canonical, repo_path)?;
-            index.add(relative_path.clone(), blob_hash);
-            println!("Added {}", relative_path);
+            if rel_path.split('/').any(|c| c == ".rusty" || c == ".git") {
+                anyhow::bail!("Cannot add internal repository files");
+            }
+
+            if !index.contains(&rel_path) && ignore.is_ignored(&rel_path, false) {
+                println!(
+                    "The following path is ignored by .rustyignore:\n  {}",
+                    rel_path
+                );
+                return Ok(());
+            }
+
+            let blob_hash = objects::hash_objects(&canonical_target, repo_path)?;
+            index.add(rel_path.clone(), blob_hash);
+            println!("Added {}", rel_path);
             added_count += 1;
         }
     } else {
-        let relative_path = full_path
-            .strip_prefix(&repo_root)?
-            .to_string_lossy()
-            .replace('\\', "/");
+        // Target does NOT exist on disk.
+        // Check if it corresponds to an existing tracked file in the index.
+        let rel_candidate = if file_path.is_absolute() {
+            if let Ok(rel) = file_path.strip_prefix(&repo_root) {
+                rel.to_string_lossy().replace('\\', "/")
+            } else {
+                anyhow::bail!("File is outside the repository");
+            }
+        } else {
+            // Try relative from cwd
+            let full = cwd.join(file_path);
+            if let Ok(rel) = full.strip_prefix(&repo_root) {
+                rel.to_string_lossy().replace('\\', "/")
+            } else {
+                file_path.to_string_lossy().replace('\\', "/")
+            }
+        };
 
-        let blob_hash = objects::hash_objects(&full_path, repo_path)?;
-        index.add(relative_path.clone(), blob_hash);
-        println!("Added {}", relative_path);
-        added_count += 1;
+        if index.contains(&rel_candidate) {
+            index.remove(&rel_candidate);
+            println!("Removed {}", rel_candidate);
+            added_count += 1;
+        } else {
+            anyhow::bail!("Path not found: {}", file_path.display());
+        }
     }
 
     index.save(repo_path)?;

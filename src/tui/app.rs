@@ -1,10 +1,13 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+        MouseButton, MouseEventKind,
+    },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, layout::Rect, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use std::io::{self, Stdout};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -236,7 +239,9 @@ impl App {
                 app.current_branch
             ));
         } else {
-            app.log_warn("No .rusty repository detected in current path. Use 'Init Repo' (i) to initialize.");
+            app.log_warn(
+                "No .rusty repository detected in current path. Use 'Init Repo' (i) to initialize.",
+            );
         }
 
         app
@@ -410,7 +415,11 @@ impl App {
             return;
         };
 
-        let target = if file.trim().is_empty() { "." } else { file.trim() };
+        let target = if file.trim().is_empty() {
+            "."
+        } else {
+            file.trim()
+        };
         self.log_info(&format!("Staging files from '{}'...", target));
 
         match crate::add::add_file(Path::new(target), &repo_path) {
@@ -523,7 +532,7 @@ impl App {
                 }
                 self.log_info(&format!("Server:        {}", c.server));
                 let masked_token = if c.token.len() > 6 {
-                    format!("{}...{}", &c.token[..4], &c.token[c.token.len()-2..])
+                    format!("{}...{}", &c.token[..4], &c.token[c.token.len() - 2..])
                 } else {
                     "******".to_string()
                 };
@@ -551,7 +560,11 @@ impl App {
             return;
         }
 
-        self.log_info(&format!("Adding remote '{}' -> {}", name.trim(), url.trim()));
+        self.log_info(&format!(
+            "Adding remote '{}' -> {}",
+            name.trim(),
+            url.trim()
+        ));
         match crate::remote::add_remote(&repo_path, name.trim(), url.trim()) {
             Ok(_) => {
                 self.log_success(&format!("Added remote '{}'!", name.trim()));
@@ -639,18 +652,21 @@ impl App {
                 let text = res.text().unwrap_or_default();
                 if status.is_success() {
                     let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                    let u = parsed["data"]["user"]["username"].as_str().map(|s| s.to_string());
+                    let u = parsed["data"]["user"]["username"]
+                        .as_str()
+                        .map(|s| s.to_string());
                     (true, u)
                 } else {
-                    let err_msg = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if let Some(msg) = parsed["message"].as_str() {
-                            msg.to_string()
+                    let err_msg =
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
+                            if let Some(msg) = parsed["message"].as_str() {
+                                msg.to_string()
+                            } else {
+                                text
+                            }
                         } else {
                             text
-                        }
-                    } else {
-                        text
-                    };
+                        };
                     self.auth_error = Some(format!("Auth rejected ({}): {}", status, err_msg));
                     (false, None)
                 }
@@ -658,7 +674,11 @@ impl App {
             Err(err) => {
                 // Try fallback verification endpoint
                 let alt_url = format!("{}/auth/verify-token", server);
-                match client.post(&alt_url).json(&serde_json::json!({ "email": email, "token": token })).send() {
+                match client
+                    .post(&alt_url)
+                    .json(&serde_json::json!({ "email": email, "token": token }))
+                    .send()
+                {
                     Ok(res) if res.status().is_success() => (true, None),
                     _ => {
                         self.auth_error = Some(format!("Connection error to {}: {}", server, err));
@@ -912,7 +932,9 @@ fn capture_status(repo_path: &Path) -> Result<Vec<String>> {
     use crate::objects;
     use walkdir::WalkDir;
 
-    let repo_root = repo_path.parent().ok_or_else(|| anyhow::anyhow!("Invalid repo path"))?;
+    let repo_root = repo_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid repo path"))?;
     let index = Index::load(repo_path)?;
     let mut results = Vec::new();
     let mut found_any = false;
@@ -1019,7 +1041,11 @@ pub fn run_tui() -> Result<()> {
     let res = run_loop(&mut terminal, &mut app);
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
@@ -1029,10 +1055,7 @@ pub fn run_tui() -> Result<()> {
     Ok(())
 }
 
-fn run_loop(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    app: &mut App,
-) -> Result<()> {
+fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
 
@@ -1078,7 +1101,9 @@ fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
 }
 
 fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
-    if modifiers.contains(KeyModifiers::CONTROL) && (code == KeyCode::Char('c') || code == KeyCode::Char('C')) {
+    if modifiers.contains(KeyModifiers::CONTROL)
+        && (code == KeyCode::Char('c') || code == KeyCode::Char('C'))
+    {
         app.should_quit = true;
         return;
     }
@@ -1089,7 +1114,9 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
             KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => app.previous_command(),
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => app.next_command(),
             KeyCode::Enter => app.execute_selected(),
-            KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::Char('H') => app.active_modal = ActiveModal::Help,
+            KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::Char('H') => {
+                app.active_modal = ActiveModal::Help
+            }
             KeyCode::Char('s') | KeyCode::Char('S') => {
                 app.select_action(CommandAction::Status);
                 app.execute_action(CommandAction::Status);
@@ -1239,7 +1266,11 @@ fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
         },
 
         ActiveModal::Help => match code {
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('?') | KeyCode::Char('h') => {
+            KeyCode::Esc
+            | KeyCode::Enter
+            | KeyCode::Char('q')
+            | KeyCode::Char('?')
+            | KeyCode::Char('h') => {
                 app.active_modal = ActiveModal::None;
             }
             _ => {}

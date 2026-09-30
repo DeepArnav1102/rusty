@@ -1,8 +1,10 @@
 mod add;
 mod auth;
+mod checkout;
 mod cli;
 mod commit;
 mod fetch;
+mod ignore;
 mod index;
 mod log;
 mod objects;
@@ -12,7 +14,6 @@ mod repository;
 mod status;
 mod tree;
 mod tui;
-mod checkout;
 
 use anyhow::Result;
 use clap::Parser;

@@ -57,7 +57,9 @@ fn remove_credentials() -> Result<()> {
 }
 
 pub fn login(server_url_opt: Option<&str>) -> Result<()> {
-    let server_url = server_url_opt.unwrap_or(DEFAULT_SERVER).trim_end_matches('/');
+    let server_url = server_url_opt
+        .unwrap_or(DEFAULT_SERVER)
+        .trim_end_matches('/');
 
     println!("\n🔑 Rusty VCS Authentication");
     println!("  Connect CLI to your Git Version Control account.");
@@ -119,7 +121,9 @@ pub fn login(server_url_opt: Option<&str>) -> Result<()> {
             let text = res.text().unwrap_or_default();
             if status.is_success() {
                 let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                let username = parsed["data"]["user"]["username"].as_str().map(|s| s.to_string());
+                let username = parsed["data"]["user"]["username"]
+                    .as_str()
+                    .map(|s| s.to_string());
                 (true, text, username)
             } else {
                 let err_msg = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -137,7 +141,11 @@ pub fn login(server_url_opt: Option<&str>) -> Result<()> {
         Err(err) => {
             // Try fallback URL /auth/verify-token in case running on custom server
             let alt_url = format!("{}/auth/verify-token", server_url);
-            match client.post(&alt_url).json(&serde_json::json!({ "email": email, "token": token })).send() {
+            match client
+                .post(&alt_url)
+                .json(&serde_json::json!({ "email": email, "token": token }))
+                .send()
+            {
                 Ok(res) if res.status().is_success() => (true, "OK".to_string(), None),
                 _ => anyhow::bail!("Failed to connect to server at {}: {}", server_url, err),
             }

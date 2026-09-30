@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-use std::fs;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,12 +48,7 @@ impl Index {
     }
 
     pub fn add(&mut self, path: String, blob_hash: String) {
-        self.entries.insert(
-            path,
-            IndexEntry {
-                blob_hash,
-            },
-        );
+        self.entries.insert(path, IndexEntry { blob_hash });
     }
 
     pub fn remove(&mut self, path: &str) {

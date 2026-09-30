@@ -6,24 +6,31 @@ use crate::commit::Commit;
 
 pub fn show_log(repo_path: &Path) -> Result<()> {
     let head_path = repo_path.join("HEAD");
+    if !head_path.exists() {
+        println!("No commits yet");
+        return Ok(());
+    }
     let head = fs::read_to_string(head_path)?;
+    let head = head.trim();
 
-    let branch = head.strip_prefix("ref: ").unwrap().trim();
+    let start_hash = if let Some(branch) = head.strip_prefix("ref: ") {
+        let branch_path = repo_path.join(branch.trim());
+        if !branch_path.exists() {
+            println!("No commits yet");
+            return Ok(());
+        }
+        let hash = fs::read_to_string(branch_path)?;
+        hash.trim().to_string()
+    } else {
+        head.to_string()
+    };
 
-    let branch_path = repo_path.join(branch);
-
-    if !branch_path.exists() {
+    if start_hash.is_empty() {
         println!("No commits yet");
         return Ok(());
     }
 
-    let hash = fs::read_to_string(branch_path)?;
-    let mut current_hash = hash.trim().to_string();
-
-    if current_hash.is_empty() {
-        println!("No commits yet");
-        return Ok(());
-    }
+    let mut current_hash = start_hash;
 
     loop {
         let commit_path = repo_path
