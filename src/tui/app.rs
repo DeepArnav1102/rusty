@@ -979,7 +979,7 @@ fn capture_status(repo_path: &Path) -> Result<Vec<String>> {
 }
 
 fn capture_log(repo_path: &Path) -> Result<Vec<String>> {
-    use crate::commit::Commit;
+    use crate::commit::get_commit;
 
     let head_path = repo_path.join("HEAD");
     let head = std::fs::read_to_string(head_path)?;
@@ -1001,15 +1001,10 @@ fn capture_log(repo_path: &Path) -> Result<Vec<String>> {
     let mut count = 0;
 
     while !current_hash.is_empty() && count < 30 {
-        let commit_path = repo_path
-            .join("objects")
-            .join("commits")
-            .join(&current_hash);
-        if !commit_path.exists() {
-            break;
-        }
-        let data = std::fs::read(&commit_path)?;
-        let commit: Commit = serde_json::from_slice(&data)?;
+        let commit = match get_commit(repo_path, &current_hash) {
+            Ok(commit) => commit,
+            Err(_) => break,
+        };
 
         let short_hash = if current_hash.len() >= 8 {
             &current_hash[..8]
@@ -1019,10 +1014,18 @@ fn capture_log(repo_path: &Path) -> Result<Vec<String>> {
 
         logs.push(format!("● [{}] {}", short_hash, commit.message));
 
-        match commit.parent {
-            Some(p) => current_hash = p,
-            None => break,
+        // Follow the first parent for the normal linear log view.
+        // Merge commits can have multiple parents; parents[0] is the
+        // current branch's history, while the other parent is the merged branch.
+        match commit.parents.first() {
+            Some(parent_hash) => {
+                current_hash = parent_hash.clone();
+            }
+            None => {
+                break;
+            }
         }
+
         count += 1;
     }
 

@@ -37,6 +37,7 @@ pub fn push(repo_path: &Path) -> Result<()> {
     }
 
     let mut sent = HashSet::new();
+
     println!("Pushing objects to {}...", origin);
 
     send_object(repo_path, &origin, "commit", commit_hash, &mut sent, &creds)?;
@@ -45,11 +46,13 @@ pub fn push(repo_path: &Path) -> Result<()> {
     remote::update_ref(&origin, branch, commit_hash, &creds)?;
 
     let clean_branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
+
     println!(
         "\n✓ Pushed commit {} to branch '{}'",
         &commit_hash[..8.min(commit_hash.len())],
         clean_branch
     );
+
     println!("  Remote: {}", origin);
     println!("  View your code on the website repository page.\n");
 
@@ -90,6 +93,7 @@ fn send_object(
         );
     } else {
         remote::send_object(origin, object_type, hash, &data, creds)?;
+
         println!(
             "  + uploaded {} {}",
             object_type,
@@ -101,10 +105,13 @@ fn send_object(
         "commit" => {
             let commit: Commit = serde_json::from_slice(&data)?;
 
+            // Send the tree referenced by this commit.
             send_object(repo_path, origin, "tree", &commit.tree, sent, creds)?;
 
-            if let Some(parent) = commit.parent {
-                send_object(repo_path, origin, "commit", &parent, sent, creds)?;
+            // Send ALL parents.
+            // This is required for merge commits.
+            for parent in &commit.parents {
+                send_object(repo_path, origin, "commit", parent, sent, creds)?;
             }
         }
 

@@ -1,5 +1,6 @@
 mod add;
 mod auth;
+mod branch;
 mod checkout;
 mod cli;
 mod commit;
@@ -7,10 +8,12 @@ mod fetch;
 mod ignore;
 mod index;
 mod log;
+mod merge;
 mod objects;
 mod push;
 mod remote;
 mod repository;
+mod rm;
 mod status;
 mod tree;
 mod tui;
@@ -143,11 +146,47 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Checkout { target } => {
+        Commands::Checkout { branch } => {
             let repo_path = find_repo_path()?;
-            checkout::checkout(&repo_path, &target)?;
+
+            checkout::checkout(&repo_path, &branch)?;
         }
+        Commands::Rm { cached, path } => {
+            let repo_path = find_repo_path()?;
+
+            if cached {
+                rm::rm_cached(&path, &repo_path)?;
+            } else {
+                anyhow::bail!("only 'rm --cached' is currently supported");
+            }
+        }
+        Commands::Merge { branch } => {
+            let repo_path = find_repo_path()?;
+            merge::merge(&repo_path, &branch)?;
+        }
+Commands::Branch { name } => {
+
+    let repo_path = find_repo_path()?;
+
+
+    match name {
+
+        Some(name) => {
+            branch::create_branch(
+                &repo_path,
+                &name,
+            )?;
+        }
+
+
+        None => {
+            branch::list_branches(
+                &repo_path,
+            )?;
+        }
+
     }
+}    }
 
     Ok(())
 }

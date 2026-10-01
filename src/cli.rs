@@ -29,9 +29,14 @@ pub enum Commands {
     Push,
     Fetch,
     Checkout {
-        target: String,
+        branch: String,
     },
+    Rm {
+        #[arg(long)]
+        cached: bool,
 
+        path: String,
+    },
     Login {
         #[arg(short, long)]
         server: Option<String>,
@@ -41,6 +46,12 @@ pub enum Commands {
     Remote {
         #[command(subcommand)]
         command: RemoteCommands,
+    },
+    Merge {
+        branch: String,
+    },
+    Branch {
+        name: Option<String>,
     },
 }
 

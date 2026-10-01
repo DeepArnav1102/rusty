@@ -6,24 +6,6 @@ use std::path::Path;
 
 use crate::auth::Credentials;
 
-pub fn test_connection(url: &str) -> Result<()> {
-    let client = Client::new();
-
-    let data = json!({
-        "message": "hello world",
-        "Hash": "abc123",
-    });
-
-    let response = client.post(url).json(&data).send()?;
-
-    println!("response status: {}", response.status());
-
-    let body = response.text()?;
-    println!("Response: {}", body);
-
-    Ok(())
-}
-
 pub fn add_remote(repo_path: &Path, name: &str, url: &str) -> Result<()> {
     let config_path = repo_path.join("config");
 

@@ -131,10 +131,18 @@ fn fetch_object(
 
             let commit: crate::commit::Commit = serde_json::from_slice(&data)?;
 
+            // Fetch the tree belonging to this commit.
             fetch_object(repo_path, origin, "tree", &commit.tree, fetched, creds)?;
 
-            if let Some(parent) = commit.parent {
-                fetch_object(repo_path, origin, "commit", &parent, fetched, creds)?;
+            // Fetch ALL parents.
+            //
+            // Normal commit:
+            // parents = [parent]
+            //
+            // Merge commit:
+            // parents = [our_commit, their_commit]
+            for parent in &commit.parents {
+                fetch_object(repo_path, origin, "commit", parent, fetched, creds)?;
             }
         }
 

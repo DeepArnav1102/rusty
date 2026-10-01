@@ -45,9 +45,9 @@ pub fn show_log(repo_path: &Path) -> Result<()> {
         println!("       {}", commit.message);
         println!();
 
-        match commit.parent {
+        match commit.parents.first() {
             Some(parent_hash) => {
-                current_hash = parent_hash;
+                current_hash = parent_hash.clone();
             }
             None => {
                 break;

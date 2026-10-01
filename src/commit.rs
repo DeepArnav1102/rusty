@@ -10,18 +10,56 @@ use crate::tree::write_tree;
 pub struct Commit {
     pub tree: String,
     pub message: String,
-    pub parent: Option<String>,
+
+    // New format: supports 0, 1, or multiple parents.
+    #[serde(default)]
+    pub parents: Vec<String>,
+}
+
+// Used only for reading old commit objects that contain:
+// "parent": "abc123..."
+#[derive(Deserialize)]
+struct LegacyCommit {
+    tree: String,
+    message: String,
+
+    #[serde(default)]
+    parents: Vec<String>,
+
+    #[serde(default)]
+    parent: Option<String>,
 }
 
 pub fn get_commit(repo_path: &Path, commit_hash: &str) -> Result<Commit> {
     let commit_path = repo_path.join("objects").join("commits").join(commit_hash);
+
     if !commit_path.exists() {
         anyhow::bail!("Commit not found: {}", commit_hash);
     }
+
     let data = fs::read(&commit_path)?;
-    let commit: Commit = serde_json::from_slice(&data)
+
+    let legacy: LegacyCommit = serde_json::from_slice(&data)
         .with_context(|| format!("Invalid commit object {}", commit_hash))?;
-    Ok(commit)
+
+    let mut parents = legacy.parents;
+
+    // Convert old:
+    // "parent": "abc..."
+    //
+    // into:
+    // parents: ["abc..."]
+    if parents.is_empty() {
+        if let Some(parent) = legacy.parent {
+            parents.push(parent);
+        }
+    }
+
+    Ok(Commit {
+        tree: legacy.tree,
+        message: legacy.message,
+        parents,
+    })
 }
 
 pub fn create_commit(repo_path: &Path, message: String) -> Result<String> {
@@ -39,25 +77,23 @@ pub fn create_commit(repo_path: &Path, message: String) -> Result<String> {
 
     let branch_path = repo_path.join(branch);
 
-    let parent = if branch_path.exists() {
+    // Normal commit has at most one parent.
+    let parents = if branch_path.exists() {
         let hash = fs::read_to_string(&branch_path)?;
         let hash = hash.trim();
 
         if hash.is_empty() {
-            None
+            Vec::new()
         } else {
-            Some(hash.to_string())
+            vec![hash.to_string()]
         }
     } else {
-        None
+        Vec::new()
     };
 
-    if let Some(parent_hash) = &parent {
-        let parent_path = repo_path.join("objects").join("commits").join(parent_hash);
-
-        let parent_data = fs::read(&parent_path)?;
-
-        let parent_commit: Commit = serde_json::from_slice(&parent_data)?;
+    // Check if there is anything to commit.
+    if let Some(parent_hash) = parents.first() {
+        let parent_commit = get_commit(repo_path, parent_hash)?;
 
         if parent_commit.tree == tree_hash {
             anyhow::bail!("Nothing to commit");
@@ -67,7 +103,7 @@ pub fn create_commit(repo_path: &Path, message: String) -> Result<String> {
     let commit = Commit {
         tree: tree_hash,
         message,
-        parent,
+        parents,
     };
 
     let data = serde_json::to_vec(&commit)?;
