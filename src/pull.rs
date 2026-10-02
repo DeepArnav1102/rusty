@@ -34,13 +34,33 @@ pub fn pull(repo_path: &Path) -> Result<()> {
     println!("Pulling branch '{}'...", branch);
 
     // ------------------------------------------------------------
-    // 3. Fetch remote changes
+    // 3. Fetch ALL remote branches
     // ------------------------------------------------------------
 
     fetch(repo_path)?;
 
     // ------------------------------------------------------------
-    // 4. Merge remote-tracking branch
+    // 4. Verify remote tracking branch exists
+    // ------------------------------------------------------------
+
+    let remote_branch_path = repo_path
+        .join("refs")
+        .join("remotes")
+        .join("origin")
+        .join(branch);
+
+    if !remote_branch_path.exists() {
+        anyhow::bail!("No remote tracking branch to pull from for '{}'.", branch);
+    }
+
+    let remote_hash = fs::read_to_string(&remote_branch_path)?.trim().to_string();
+
+    if remote_hash.is_empty() {
+        anyhow::bail!("No remote tracking branch to pull from for '{}'.", branch);
+    }
+
+    // ------------------------------------------------------------
+    // 5. Merge remote-tracking branch
     // ------------------------------------------------------------
 
     let remote_branch = format!("origin/{}", branch);

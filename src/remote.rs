@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -58,7 +59,9 @@ pub fn send_object(
     data: &[u8],
     creds: &Credentials,
 ) -> Result<()> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
     let body = json!({
         "type": object_type,
@@ -74,17 +77,20 @@ pub fn send_object(
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
         .json(&body)
-        .send()?;
+        .send()
+        .context("Could not reach remote")?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body_str = response.text().unwrap_or_default();
+
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             anyhow::bail!(
                 "Authentication failed. Run `rusty login` to authenticate with your website email and PAT token.\nServer: {}",
                 body_str
             );
         }
+
         anyhow::bail!(
             "Failed to send {} {}: ({}) {}",
             object_type,
@@ -98,7 +104,9 @@ pub fn send_object(
 }
 
 pub fn object_exists(origin: &str, hash: &str, creds: &Credentials) -> Result<bool> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
     let url = format!("{}/objects/{}/exists", origin.trim_end_matches('/'), hash);
 
@@ -107,7 +115,8 @@ pub fn object_exists(origin: &str, hash: &str, creds: &Credentials) -> Result<bo
         .header("Authorization", format!("Bearer {}", creds.token))
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
-        .send()?;
+        .send()
+        .context("Could not reach remote")?;
 
     if !response.status().is_success() {
         return Ok(false);
@@ -124,7 +133,9 @@ pub fn update_ref(
     commit_hash: &str,
     creds: &Credentials,
 ) -> Result<()> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
     let clean_branch = branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref);
 
@@ -141,11 +152,20 @@ pub fn update_ref(
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
         .json(&body)
-        .send()?;
+        .send()
+        .context("Could not reach remote")?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body_str = response.text().unwrap_or_default();
+
+        if status == reqwest::StatusCode::CONFLICT || status == reqwest::StatusCode::BAD_REQUEST {
+            anyhow::bail!(
+                "Updates were rejected because the remote contains work that you do not have locally. Run 'rusty pull' first.\nServer: {}",
+                body_str
+            );
+        }
+
         anyhow::bail!(
             "Failed to update remote branch reference ({}): {}",
             status,
@@ -157,7 +177,9 @@ pub fn update_ref(
 }
 
 pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
     let url = format!("{}/refs/{}", origin.trim_end_matches('/'), branch);
 
@@ -166,7 +188,8 @@ pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String
         .header("Authorization", format!("Bearer {}", creds.token))
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
-        .send()?;
+        .send()
+        .context("Could not reach remote")?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -184,8 +207,59 @@ pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String
     Ok(hash.to_string())
 }
 
+// ============================================================
+// GET ALL REMOTE BRANCH REFERENCES
+// ============================================================
+
+pub fn get_all_refs(origin: &str, creds: &Credentials) -> Result<BTreeMap<String, String>> {
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let url = format!("{}/refs", origin.trim_end_matches('/'));
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .header("X-Rusty-Email", &creds.email)
+        .header("X-Rusty-Token", &creds.token)
+        .send()
+        .context("Could not reach remote")?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().unwrap_or_default();
+
+        anyhow::bail!("Could not fetch remote branches ({}): {}", status, body);
+    }
+
+    let data: serde_json::Value = response.json()?;
+
+    let mut refs = BTreeMap::new();
+
+    if let Some(branches) = data["branches"].as_array() {
+        for branch in branches {
+            let name = match branch["branch"].as_str() {
+                Some(name) if !name.trim().is_empty() => name.trim(),
+                _ => continue,
+            };
+
+            let hash = match branch["commitHash"].as_str() {
+                Some(hash) if !hash.trim().is_empty() => hash.trim(),
+                _ => continue,
+            };
+
+            refs.insert(name.to_string(), hash.to_string());
+        }
+    }
+
+    Ok(refs)
+}
+
 pub fn get_object(origin: &str, hash: &str, creds: &Credentials) -> Result<serde_json::Value> {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
     let url = format!("{}/objects/{}", origin.trim_end_matches('/'), hash);
 
@@ -194,7 +268,8 @@ pub fn get_object(origin: &str, hash: &str, creds: &Credentials) -> Result<serde
         .header("Authorization", format!("Bearer {}", creds.token))
         .header("X-Rusty-Email", &creds.email)
         .header("X-Rusty-Token", &creds.token)
-        .send()?;
+        .send()
+        .context("Could not reach remote")?;
 
     if !response.status().is_success() {
         let status = response.status();
