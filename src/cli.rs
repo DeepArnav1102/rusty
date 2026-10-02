@@ -52,6 +52,12 @@ pub enum Commands {
     },
     Branch {
         name: Option<String>,
+
+        #[arg(short, long)]
+        remote: bool,
+
+        #[arg(short, long)]
+        all: bool,
     },
     Pull,
 }

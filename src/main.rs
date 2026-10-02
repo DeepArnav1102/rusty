@@ -165,15 +165,24 @@ fn main() -> Result<()> {
             let repo_path = find_repo_path()?;
             merge::merge(&repo_path, &branch)?;
         }
-        Commands::Branch { name } => {
+        Commands::Branch { name, remote, all } => {
             let repo_path = find_repo_path()?;
+
+            if remote && all {
+                anyhow::bail!("Use either --remote or --all, not both");
+            }
+
+            if name.is_some() && (remote || all) {
+                anyhow::bail!("Branch creation cannot be combined with --remote or --all");
+            }
+
             match name {
                 Some(name) => {
                     branch::create_branch(&repo_path, &name)?;
                 }
 
                 None => {
-                    branch::list_branches(&repo_path)?;
+                    branch::list_branches(&repo_path, remote, all)?;
                 }
             }
         }

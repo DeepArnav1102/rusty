@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::repository::get_head_commit;
 
@@ -14,7 +14,9 @@ pub fn create_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
         anyhow::bail!("Branch '{}' already exists", branch_name);
     }
 
-    fs::create_dir_all(branch_path.parent().unwrap())?;
+    if let Some(parent) = branch_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     fs::write(branch_path, head_commit)?;
 
@@ -23,26 +25,48 @@ pub fn create_branch(repo_path: &Path, branch_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn list_branches(repo_path: &Path) -> Result<()> {
+// ============================================================
+// BRANCH LISTING
+// ============================================================
+
+pub fn list_branches(repo_path: &Path, remote: bool, all: bool) -> Result<()> {
+    let head = fs::read_to_string(repo_path.join("HEAD")).unwrap_or_default();
+
+    let current_branch = head.strip_prefix("ref: refs/heads/").unwrap_or("").trim();
+
+    if all {
+        list_local_branches(repo_path, current_branch)?;
+
+        list_remote_branches(repo_path)?;
+
+        return Ok(());
+    }
+
+    if remote {
+        list_remote_branches(repo_path)?;
+
+        return Ok(());
+    }
+
+    list_local_branches(repo_path, current_branch)?;
+
+    Ok(())
+}
+
+// ============================================================
+// LOCAL BRANCHES
+// ============================================================
+
+fn list_local_branches(repo_path: &Path, current_branch: &str) -> Result<()> {
     let heads_path = repo_path.join("refs").join("heads");
 
     if !heads_path.exists() {
         return Ok(());
     }
 
-    let head = fs::read_to_string(repo_path.join("HEAD"))?;
-
-    let current_branch = head.strip_prefix("ref: refs/heads/").unwrap_or("").trim();
-
     let mut branches = Vec::new();
 
-    for entry in fs::read_dir(heads_path)? {
-        let entry = entry?;
-
-        let name = entry.file_name().to_string_lossy().to_string();
-
-        branches.push(name);
-    }
+    collect_branch_files(&heads_path, &heads_path, &mut branches)?;
 
     branches.sort();
 
@@ -51,6 +75,54 @@ pub fn list_branches(repo_path: &Path) -> Result<()> {
             println!("* {}", branch);
         } else {
             println!("  {}", branch);
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================
+// REMOTE BRANCHES
+// ============================================================
+
+fn list_remote_branches(repo_path: &Path) -> Result<()> {
+    let remote_path = repo_path.join("refs").join("remotes").join("origin");
+
+    if !remote_path.exists() {
+        return Ok(());
+    }
+
+    let mut branches = Vec::new();
+
+    collect_branch_files(&remote_path, &remote_path, &mut branches)?;
+
+    branches.sort();
+
+    for branch in branches {
+        println!("  origin/{}", branch);
+    }
+
+    Ok(())
+}
+
+// ============================================================
+// RECURSIVE REF FILE DISCOVERY
+// ============================================================
+
+fn collect_branch_files(root: &Path, current: &Path, branches: &mut Vec<String>) -> Result<()> {
+    for entry in fs::read_dir(current)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            collect_branch_files(root, &path, branches)?;
+        } else if path.is_file() {
+            let relative = path
+                .strip_prefix(root)?
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            branches.push(relative);
         }
     }
 
