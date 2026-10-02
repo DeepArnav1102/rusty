@@ -7,6 +7,10 @@ use std::path::Path;
 
 use crate::auth::Credentials;
 
+// ============================================================
+// ADD REMOTE
+// ============================================================
+
 pub fn add_remote(repo_path: &Path, name: &str, url: &str) -> Result<()> {
     let config_path = repo_path.join("config");
 
@@ -36,6 +40,10 @@ pub fn add_remote(repo_path: &Path, name: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
+// ============================================================
+// GET REMOTE URL
+// ============================================================
+
 pub fn get_remote(repo_path: &Path, name: &str) -> Result<String> {
     let config_path = repo_path.join("config");
 
@@ -51,6 +59,10 @@ pub fn get_remote(repo_path: &Path, name: &str) -> Result<String> {
 
     Ok(url.to_string())
 }
+
+// ============================================================
+// SEND OBJECT
+// ============================================================
 
 pub fn send_object(
     origin: &str,
@@ -103,6 +115,10 @@ pub fn send_object(
     Ok(())
 }
 
+// ============================================================
+// CHECK IF OBJECT EXISTS
+// ============================================================
+
 pub fn object_exists(origin: &str, hash: &str, creds: &Credentials) -> Result<bool> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -126,6 +142,10 @@ pub fn object_exists(origin: &str, hash: &str, creds: &Credentials) -> Result<bo
 
     Ok(data["exists"].as_bool().unwrap_or(false))
 }
+
+// ============================================================
+// UPDATE REMOTE BRANCH REFERENCE
+// ============================================================
 
 pub fn update_ref(
     origin: &str,
@@ -175,6 +195,10 @@ pub fn update_ref(
 
     Ok(())
 }
+
+// ============================================================
+// GET SINGLE REMOTE REF
+// ============================================================
 
 pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String> {
     let client = Client::builder()
@@ -255,6 +279,10 @@ pub fn get_all_refs(origin: &str, creds: &Credentials) -> Result<BTreeMap<String
 
     Ok(refs)
 }
+
+// ============================================================
+// GET OBJECT FROM REMOTE
+// ============================================================
 
 pub fn get_object(origin: &str, hash: &str, creds: &Credentials) -> Result<serde_json::Value> {
     let client = Client::builder()

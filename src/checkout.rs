@@ -170,6 +170,30 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
         .context("Invalid repository path")?
         .canonicalize()?;
 
+    // Load the current index so we know which files
+    // are currently tracked.
+    let current_index = Index::load(repo_path)?;
+
+    // ------------------------------------------------------------
+    // 1. Remove tracked files that do not exist
+    //    in the target commit
+    // ------------------------------------------------------------
+
+    for path in current_index.entries.keys() {
+        if !files.contains_key(path) {
+            let file_path = repo_root.join(path);
+
+            if file_path.exists() {
+                fs::remove_file(&file_path)?;
+                println!("  - {}", path);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // 2. Restore files from target commit
+    // ------------------------------------------------------------
+
     for (path, blob_hash) in files {
         let file_path = repo_root.join(path);
 
@@ -183,9 +207,9 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
             anyhow::bail!("Missing blob object {}", blob_hash);
         }
 
-        let data = fs::read(blob_path)?;
+        let data = fs::read(&blob_path)?;
 
-        fs::write(file_path, data)?;
+        fs::write(&file_path, data)?;
     }
 
     Ok(())

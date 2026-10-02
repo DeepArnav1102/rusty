@@ -95,7 +95,7 @@ fn prune_stale_refs(remote_ref_dir: &Path, remote_refs: &BTreeMap<String, String
 
     let mut stale = Vec::new();
 
-    collect_ref_files(remote_ref_dir, remote_ref_dir, &mut stale)?;
+    collect_ref_files(remote_ref_dir, &mut stale)?;
 
     for ref_path in stale {
         let relative = ref_path
@@ -119,23 +119,17 @@ fn prune_stale_refs(remote_ref_dir: &Path, remote_refs: &BTreeMap<String, String
 // FIND ALL REMOTE-TRACKING REF FILES
 // ============================================================
 
-fn collect_ref_files(
-    root: &Path,
-    current: &Path,
-    files: &mut Vec<std::path::PathBuf>,
-) -> Result<()> {
+fn collect_ref_files(current: &Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
     for entry in fs::read_dir(current)? {
         let entry = entry?;
         let path = entry.path();
 
         if path.is_dir() {
-            collect_ref_files(root, &path, files)?;
+            collect_ref_files(&path, files)?;
         } else if path.is_file() {
             files.push(path);
         }
     }
-
-    let _ = root;
 
     Ok(())
 }
@@ -192,6 +186,10 @@ fn fetch_object(
 
     let object_path = repo_path.join("objects").join(object_dir).join(hash);
 
+    // ------------------------------------------------------------
+    // Download object if it doesn't already exist
+    // ------------------------------------------------------------
+
     if object_path.exists() {
         println!("  ✓ {} {} already exists", object_type, short_hash(hash));
     } else {
@@ -223,15 +221,30 @@ fn fetch_object(
         println!("  + downloaded {} {}", object_type, short_hash(hash));
     }
 
+    // ------------------------------------------------------------
+    // Recursively fetch referenced objects
+    // ------------------------------------------------------------
+
     match object_type {
         "commit" => {
-            let data = fs::read(&object_path)?;
+            // IMPORTANT:
+            // Use get_commit() instead of directly deserializing
+            // Commit. get_commit() understands both:
+            //
+            // Old:
+            //     "parent": "abc..."
+            //
+            // New:
+            //     "parents": ["abc...", "..."]
+            //
+            // This ensures old commit histories are fetched too.
 
-            let commit: crate::commit::Commit = serde_json::from_slice(&data)?;
+            let commit = crate::commit::get_commit(repo_path, hash)?;
 
+            // Fetch commit tree
             fetch_object(repo_path, origin, "tree", &commit.tree, fetched, creds)?;
 
-            // Fetch ALL parents.
+            // Fetch ALL parents
             for parent in &commit.parents {
                 fetch_object(repo_path, origin, "commit", parent, fetched, creds)?;
             }
