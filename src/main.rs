@@ -10,6 +10,7 @@ mod index;
 mod log;
 mod merge;
 mod objects;
+mod pull;
 mod push;
 mod remote;
 mod repository;
@@ -164,29 +165,24 @@ fn main() -> Result<()> {
             let repo_path = find_repo_path()?;
             merge::merge(&repo_path, &branch)?;
         }
-Commands::Branch { name } => {
+        Commands::Branch { name } => {
+            let repo_path = find_repo_path()?;
+            match name {
+                Some(name) => {
+                    branch::create_branch(&repo_path, &name)?;
+                }
 
-    let repo_path = find_repo_path()?;
-
-
-    match name {
-
-        Some(name) => {
-            branch::create_branch(
-                &repo_path,
-                &name,
-            )?;
+                None => {
+                    branch::list_branches(&repo_path)?;
+                }
+            }
         }
+        Commands::Pull => {
+            let repo_path = find_repo_path()?;
 
-
-        None => {
-            branch::list_branches(
-                &repo_path,
-            )?;
+            pull::pull(&repo_path)?;
         }
-
     }
-}    }
 
     Ok(())
 }

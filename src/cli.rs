@@ -53,6 +53,7 @@ pub enum Commands {
     Branch {
         name: Option<String>,
     },
+    Pull,
 }
 
 #[derive(Subcommand, Debug)]
