@@ -1,6 +1,7 @@
 use crate::commit::get_commit;
 use crate::ignore::RustyIgnore;
 use crate::index::Index;
+use crate::merge::MergeState;
 use crate::objects;
 use crate::repository::get_head_commit;
 use crate::tree::load_tree_files;
@@ -19,6 +20,24 @@ pub fn check_status(repo_path: &Path) -> Result<()> {
     let ignore = RustyIgnore::load(&repo_root);
     let index = Index::load(repo_path)?;
 
+    // ── Merge state banner ─────────────────────────────────────────────
+    if let Some(state) = MergeState::load(repo_path)? {
+        println!("You are currently merging.");
+        println!("  MERGE_HEAD: {}", short_hash(&state.merge_head));
+        println!();
+
+        if state.conflicts.is_empty() {
+            println!("All merge conflicts resolved.");
+            println!("Run 'rusty commit' to complete the merge.");
+        } else {
+            println!("Unmerged paths:");
+            for conflict in &state.conflicts {
+                println!("  {}: {}", conflict.kind, conflict.path);
+            }
+        }
+        println!();
+    }
+
     // 1. Get HEAD files (if any)
     let head_commit = get_head_commit(repo_path)?;
     let head_files: BTreeMap<String, String> = match &head_commit {
@@ -29,7 +48,7 @@ pub fn check_status(repo_path: &Path) -> Result<()> {
         None => BTreeMap::new(),
     };
 
-    // Show detached HEAD notice if applicable
+    // Show detached HEAD notice if applicable.
     let head_path = repo_path.join("HEAD");
     if head_path.exists() {
         let head_content = fs::read_to_string(&head_path).unwrap_or_default();
@@ -159,9 +178,13 @@ pub fn check_status(repo_path: &Path) -> Result<()> {
         println!();
     }
 
-    if !has_changes {
+    if !has_changes && !crate::merge::is_merge_in_progress(repo_path) {
         println!("Working tree is clean");
     }
 
     Ok(())
+}
+
+fn short_hash(hash: &str) -> &str {
+    &hash[..8.min(hash.len())]
 }

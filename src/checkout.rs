@@ -5,10 +5,19 @@ use std::path::Path;
 
 use crate::commit::get_commit;
 use crate::index::Index;
+use crate::merge;
 use crate::objects;
 use crate::tree::load_tree_files;
 
 pub fn checkout(repo_path: &Path, branch: &str) -> Result<()> {
+    // ── Block checkout during active merge ─────────────────────────────
+    if merge::is_merge_in_progress(repo_path) {
+        anyhow::bail!(
+            "Merge in progress. Commit the merge or abort it first \
+             (rusty merge --abort)."
+        );
+    }
+
     let local_branch_path = repo_path.join("refs").join("heads").join(branch);
 
     let remote_branch_path = repo_path

@@ -3,9 +3,18 @@ use std::fs;
 use std::path::Path;
 
 use crate::fetch::fetch;
-use crate::merge::merge;
+use crate::merge;
+use crate::merge::merge as do_merge;
 
 pub fn pull(repo_path: &Path) -> Result<()> {
+    // ── Block pull during active merge ─────────────────────────────────
+    if merge::is_merge_in_progress(repo_path) {
+        anyhow::bail!(
+            "Merge in progress. Commit the merge or abort it first \
+             (rusty merge --abort)."
+        );
+    }
+
     // ------------------------------------------------------------
     // 1. Read HEAD
     // ------------------------------------------------------------
@@ -65,7 +74,7 @@ pub fn pull(repo_path: &Path) -> Result<()> {
 
     let remote_branch = format!("origin/{}", branch);
 
-    merge(repo_path, &remote_branch)?;
+    do_merge(repo_path, &remote_branch)?;
 
     Ok(())
 }

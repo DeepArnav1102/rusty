@@ -48,7 +48,12 @@ pub enum Commands {
         command: RemoteCommands,
     },
     Merge {
-        branch: String,
+        /// Branch to merge, or omit with --abort to cancel an in-progress merge.
+        branch: Option<String>,
+
+        /// Abort the current in-progress merge.
+        #[arg(long)]
+        abort: bool,
     },
     Branch {
         name: Option<String>,
