@@ -161,9 +161,15 @@ fn main() -> Result<()> {
                 anyhow::bail!("only 'rm --cached' is currently supported");
             }
         }
-        Commands::Merge { branch } => {
+        Commands::Merge { branch, abort } => {
             let repo_path = find_repo_path()?;
-            merge::merge(&repo_path, &branch)?;
+            if abort {
+                merge::merge_abort(&repo_path)?;
+            } else if let Some(branch_name) = branch {
+                merge::merge(&repo_path, &branch_name)?;
+            } else {
+                anyhow::bail!("Usage: rusty merge <branch> | rusty merge --abort");
+            }
         }
         Commands::Branch { name, remote, all } => {
             let repo_path = find_repo_path()?;
