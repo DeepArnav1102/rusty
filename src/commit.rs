@@ -97,7 +97,11 @@ pub fn create_commit(repo_path: &Path, message: String) -> Result<String> {
         let current = if branch_path.exists() {
             let h = fs::read_to_string(&branch_path)?;
             let h = h.trim();
-            if h.is_empty() { None } else { Some(h.to_string()) }
+            if h.is_empty() {
+                None
+            } else {
+                Some(h.to_string())
+            }
         } else {
             None
         };
