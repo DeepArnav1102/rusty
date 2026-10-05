@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="./Adorable%20Orange%20Crab%20with%20Silver%20Chain.png" width="180" alt="Rusty Mascot" />
-
 # Rusty VCS
 
 **A distributed Version Control System built in Rust, featuring a full CLI and an interactive Ratatui Terminal UI.**
