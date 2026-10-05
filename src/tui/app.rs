@@ -9,115 +9,182 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use std::io::{self, Stdout};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use crate::auth::{self, Credentials};
+use crate::tui::capture::capture_stdout;
+use crate::tui::state::{RepoDetails, load_repo_details};
 use crate::tui::ui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandAction {
+pub enum NavCategory {
+    Repository,
+    Branching,
+    Sync,
+    Account,
+    Tools,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavSection {
+    // Repository
+    Dashboard,
     Status,
-    Add,
+    Stage,
     Commit,
     Log,
+    // Branching
+    Branches,
+    Checkout,
+    Merge,
+    // Sync
+    Fetch,
+    Pull,
     Push,
-    WriteTree,
-    Init,
-    RemoteAdd,
+    Remote,
+    // Account
     Whoami,
     Logout,
-    ClearLog,
+    // Tools
+    Rm,
     Help,
     Quit,
 }
 
 #[derive(Debug, Clone)]
-pub struct CommandItem {
+pub struct NavItem {
+    pub section: NavSection,
+    pub category: NavCategory,
     pub name: &'static str,
+    pub icon: &'static str,
     pub shortcut: &'static str,
-    pub description: &'static str,
-    pub action: CommandAction,
 }
 
-pub const COMMANDS: &[CommandItem] = &[
-    CommandItem {
+pub const NAV_ITEMS: &[NavItem] = &[
+    // Repository
+    NavItem {
+        section: NavSection::Dashboard,
+        category: NavCategory::Repository,
+        name: "Dashboard",
+        icon: "*",
+        shortcut: "1",
+    },
+    NavItem {
+        section: NavSection::Status,
+        category: NavCategory::Repository,
         name: "Status",
+        icon: "~",
         shortcut: "s",
-        description: "Inspect working tree: list modified, untracked, and clean files against index.",
-        action: CommandAction::Status,
     },
-    CommandItem {
-        name: "Stage / Add",
+    NavItem {
+        section: NavSection::Stage,
+        category: NavCategory::Repository,
+        name: "Add / Stage",
+        icon: "+",
         shortcut: "a",
-        description: "Stage modified or newly created files/directories into the staging index.",
-        action: CommandAction::Add,
     },
-    CommandItem {
+    NavItem {
+        section: NavSection::Commit,
+        category: NavCategory::Repository,
         name: "Commit",
+        icon: "@",
         shortcut: "c",
-        description: "Package staged index into a persistent tree and record a new commit.",
-        action: CommandAction::Commit,
     },
-    CommandItem {
-        name: "Commit Log",
+    NavItem {
+        section: NavSection::Log,
+        category: NavCategory::Repository,
+        name: "Log",
+        icon: "#",
         shortcut: "l",
-        description: "Traverse commit tree parent graph from HEAD to print revision history.",
-        action: CommandAction::Log,
     },
-    CommandItem {
-        name: "Push",
-        shortcut: "p",
-        description: "Upload local commit trees, blobs, and update remote branch reference.",
-        action: CommandAction::Push,
+    // Branching
+    NavItem {
+        section: NavSection::Branches,
+        category: NavCategory::Branching,
+        name: "Branches",
+        icon: "Y",
+        shortcut: "b",
     },
-    CommandItem {
-        name: "Write Tree",
-        shortcut: "w",
-        description: "Compile current index entries into SHA-256 tree objects and output root hash.",
-        action: CommandAction::WriteTree,
-    },
-    CommandItem {
-        name: "Init Repo",
-        shortcut: "i",
-        description: "Initialize an empty Rusty VCS repository structure in current directory.",
-        action: CommandAction::Init,
-    },
-    CommandItem {
-        name: "Remote Add",
-        shortcut: "r",
-        description: "Configure or update a remote upstream repository URL endpoint in config.",
-        action: CommandAction::RemoteAdd,
-    },
-    CommandItem {
-        name: "Whoami",
-        shortcut: "u",
-        description: "Display currently authenticated session user, token status, and server.",
-        action: CommandAction::Whoami,
-    },
-    CommandItem {
-        name: "Logout",
+    NavItem {
+        section: NavSection::Checkout,
+        category: NavCategory::Branching,
+        name: "Checkout",
+        icon: ">",
         shortcut: "o",
-        description: "Clear active credentials and PAT token from ~/.rusty/credentials.json.",
-        action: CommandAction::Logout,
     },
-    CommandItem {
-        name: "Clear Log",
-        shortcut: "x",
-        description: "Clear all past entries and messages from the Execution Log & Activity console.",
-        action: CommandAction::ClearLog,
+    NavItem {
+        section: NavSection::Merge,
+        category: NavCategory::Branching,
+        name: "Merge",
+        icon: "%",
+        shortcut: "m",
     },
-    CommandItem {
+    // Sync
+    NavItem {
+        section: NavSection::Fetch,
+        category: NavCategory::Sync,
+        name: "Fetch",
+        icon: "v",
+        shortcut: "f",
+    },
+    NavItem {
+        section: NavSection::Pull,
+        category: NavCategory::Sync,
+        name: "Pull",
+        icon: "V",
+        shortcut: "u",
+    },
+    NavItem {
+        section: NavSection::Push,
+        category: NavCategory::Sync,
+        name: "Push",
+        icon: "^",
+        shortcut: "p",
+    },
+    NavItem {
+        section: NavSection::Remote,
+        category: NavCategory::Sync,
+        name: "Remote",
+        icon: "$",
+        shortcut: "r",
+    },
+    // Account
+    NavItem {
+        section: NavSection::Whoami,
+        category: NavCategory::Account,
+        name: "Whoami",
+        icon: "&",
+        shortcut: "w",
+    },
+    NavItem {
+        section: NavSection::Logout,
+        category: NavCategory::Account,
+        name: "Logout",
+        icon: "X",
+        shortcut: "O",
+    },
+    // Tools
+    NavItem {
+        section: NavSection::Rm,
+        category: NavCategory::Tools,
+        name: "Rm (Cached)",
+        icon: "-",
+        shortcut: "R",
+    },
+    NavItem {
+        section: NavSection::Help,
+        category: NavCategory::Tools,
         name: "Help",
+        icon: "?",
         shortcut: "?",
-        description: "Display keyboard shortcuts and navigation tips for the Rusty TUI.",
-        action: CommandAction::Help,
     },
-    CommandItem {
+    NavItem {
+        section: NavSection::Quit,
+        category: NavCategory::Tools,
         name: "Quit",
+        icon: "Q",
         shortcut: "q",
-        description: "Exit the Rusty interactive terminal dashboard.",
-        action: CommandAction::Quit,
     },
 ];
 
@@ -127,7 +194,14 @@ pub enum ActiveModal {
     AuthLogin,
     PromptAdd,
     PromptCommit,
+    PromptBranch,
+    PromptCheckout,
+    PromptMerge,
     PromptRemoteAdd,
+    PromptRm,
+    ConfirmAbortMerge,
+    ConfirmLogout,
+    ConfirmInit,
     Help,
 }
 
@@ -144,69 +218,94 @@ pub enum RemoteField {
     Url,
 }
 
-pub struct App {
-    pub selected_index: usize,
-    pub logs: Vec<String>,
-    pub creds: Option<Credentials>,
-    pub repo_detected: bool,
-    pub repo_path: Option<PathBuf>,
-    pub current_branch: String,
-    pub active_modal: ActiveModal,
+#[derive(Debug, Clone)]
+pub struct OutputLine {
+    pub text: String,
+    pub kind: OutputKind,
+}
 
-    // Cursor position within the currently active text input
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputKind {
+    Command,
+    Info,
+    Success,
+    Warning,
+    Error,
+    Plain,
+}
+
+pub struct App {
+    pub repo: RepoDetails,
+    pub creds: Option<Credentials>,
+
+    pub selected_nav: usize,
+    pub current_view: NavSection,
+
+    // Command output history
+    pub output_lines: Vec<OutputLine>,
+    pub output_scroll: usize,
+
+    // Modal state
+    pub active_modal: ActiveModal,
     pub cursor_pos: usize,
 
-    // Auth Modal state
+    // Text inputs
     pub auth_email: String,
     pub auth_token: String,
     pub auth_server: String,
     pub auth_field: AuthField,
     pub auth_error: Option<String>,
 
-    // Prompt Add state
     pub input_path: String,
-
-    // Prompt Commit state
     pub input_message: String,
+    pub input_branch: String,
+    pub input_checkout: String,
+    pub input_merge: String,
+    pub input_rm_path: String,
 
-    // Prompt Remote Add state
     pub remote_name: String,
     pub remote_url: String,
     pub remote_field: RemoteField,
 
-    // Execution status
-    pub should_quit: bool,
+    // Selections in sub-views
+    pub selected_branch_idx: usize,
+    pub selected_commit_idx: usize,
+    pub selected_conflict_idx: usize,
 
-    // Stores the rendered rect of the "Clear" button in the console for mouse click detection
-    pub clear_btn_rect: Option<Rect>,
+    // Mouse click hitboxes (populated dynamically during draw)
+    pub hitboxes: Vec<(Rect, HitAction)>,
+
+    pub should_quit: bool,
+    pub status_message: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum HitAction {
+    Nav(usize),
+    QuickAction(NavSection),
+    ClearOutput,
+    ViewAllCommits,
+    SelectBranch(usize),
+    SelectCommit(usize),
+    SelectConflict(usize),
+    ModalSubmit,
+    ModalCancel,
 }
 
 impl App {
     pub fn new() -> Self {
         let creds = auth::load_credentials().unwrap_or(None);
-        let repo_path = find_repo_path().ok();
-        let repo_detected = repo_path.is_some();
-        let current_branch = if let Some(ref p) = repo_path {
-            detect_branch(p)
-        } else {
-            "None".to_string()
-        };
-
-        let initial_modal = if creds.is_none() {
-            ActiveModal::AuthLogin
-        } else {
-            ActiveModal::None
-        };
+        let repo = load_repo_details();
 
         let mut app = Self {
-            selected_index: 0,
-            logs: Vec::new(),
+            repo,
             creds,
-            repo_detected,
-            repo_path,
-            current_branch,
-            active_modal: initial_modal,
-
+            selected_nav: 0,
+            current_view: NavSection::Dashboard,
+            output_lines: Vec::new(),
+            output_scroll: 0,
+            active_modal: ActiveModal::None,
             cursor_pos: 0,
 
             auth_email: String::new(),
@@ -217,374 +316,670 @@ impl App {
 
             input_path: ".".to_string(),
             input_message: String::new(),
+            input_branch: String::new(),
+            input_checkout: String::new(),
+            input_merge: String::new(),
+            input_rm_path: String::new(),
 
             remote_name: "origin".to_string(),
             remote_url: "http://localhost:3000".to_string(),
             remote_field: RemoteField::Name,
 
+            selected_branch_idx: 0,
+            selected_commit_idx: 0,
+            selected_conflict_idx: 0,
+
+            hitboxes: Vec::new(),
             should_quit: false,
-            clear_btn_rect: None,
+            status_message: "All systems ready".to_string(),
         };
 
-        app.log_system("Welcome to Rusty VCS Terminal Dashboard! 🚀");
-        if app.creds.is_none() {
-            app.log_warn("Authentication required: Please log in using your email and PAT token.");
-        } else if let Some(ref c) = app.creds {
-            app.log_success(&format!("Authenticated as {} ({})", c.email, c.server));
-        }
-
-        if app.repo_detected {
-            app.log_info(&format!(
-                "Repository loaded. Active branch: {}",
-                app.current_branch
-            ));
+        // Initial greeting and status output matching the reference dashboard
+        app.log_cmd("rusty status");
+        if app.repo.is_initialized {
+            app.log_plain(&format!("On branch {}", app.repo.current_branch));
+            if app.repo.working_tree.is_clean() {
+                app.log_success("nothing to commit, working tree clean");
+            } else {
+                if app.repo.working_tree.staged_count() > 0 {
+                    app.log_info("Changes to be committed:");
+                    let staged_new = app.repo.working_tree.staged_new.clone();
+                    for f in staged_new {
+                        app.log_success(&format!("  new file:   {}", f));
+                    }
+                    let staged_modified = app.repo.working_tree.staged_modified.clone();
+                    for f in staged_modified {
+                        app.log_success(&format!("  modified:   {}", f));
+                    }
+                    let staged_deleted = app.repo.working_tree.staged_deleted.clone();
+                    for f in staged_deleted {
+                        app.log_success(&format!("  deleted:    {}", f));
+                    }
+                }
+                if app.repo.working_tree.unstaged_count() > 0 {
+                    app.log_info("Changes not staged for commit:");
+                    let unstaged_modified = app.repo.working_tree.unstaged_modified.clone();
+                    for f in unstaged_modified {
+                        app.log_warn(&format!("  modified:   {}", f));
+                    }
+                    let unstaged_deleted = app.repo.working_tree.unstaged_deleted.clone();
+                    for f in unstaged_deleted {
+                        app.log_warn(&format!("  deleted:    {}", f));
+                    }
+                }
+                if !app.repo.working_tree.untracked.is_empty() {
+                    app.log_info("Untracked files:");
+                    let untracked = app.repo.working_tree.untracked.clone();
+                    for f in untracked {
+                        app.log_warn(&format!("  {}", f));
+                    }
+                }
+            }
         } else {
-            app.log_warn(
-                "No .rusty repository detected in current path. Use 'Init Repo' (i) to initialize.",
-            );
+            app.log_warn("No .rusty repository detected. Press [I] to initialize.");
         }
 
         app
     }
 
-    pub fn refresh_repo_state(&mut self) {
-        self.repo_path = find_repo_path().ok();
-        self.repo_detected = self.repo_path.is_some();
-        if let Some(ref p) = self.repo_path {
-            self.current_branch = detect_branch(p);
-        } else {
-            self.current_branch = "None".to_string();
+    pub fn refresh_state(&mut self) {
+        self.repo = load_repo_details();
+        self.creds = auth::load_credentials().unwrap_or(None);
+    }
+
+    // Output logging methods
+    pub fn log_cmd(&mut self, cmd: &str) {
+        self.output_lines.push(OutputLine {
+            text: format!("$ {}", cmd),
+            kind: OutputKind::Command,
+        });
+        self.trim_output();
+    }
+
+    pub fn log_plain(&mut self, msg: &str) {
+        for line in msg.lines() {
+            self.output_lines.push(OutputLine {
+                text: line.to_string(),
+                kind: OutputKind::Plain,
+            });
         }
+        self.trim_output();
     }
 
     pub fn log_info(&mut self, msg: &str) {
-        self.logs.push(format!("ℹ [INFO] {}", msg));
-        self.limit_logs();
+        for line in msg.lines() {
+            self.output_lines.push(OutputLine {
+                text: line.to_string(),
+                kind: OutputKind::Info,
+            });
+        }
+        self.trim_output();
     }
 
     pub fn log_success(&mut self, msg: &str) {
-        self.logs.push(format!("✔ [SUCCESS] {}", msg));
-        self.limit_logs();
+        for line in msg.lines() {
+            self.output_lines.push(OutputLine {
+                text: line.to_string(),
+                kind: OutputKind::Success,
+            });
+        }
+        self.trim_output();
     }
 
     pub fn log_warn(&mut self, msg: &str) {
-        self.logs.push(format!("⚠ [WARN] {}", msg));
-        self.limit_logs();
+        for line in msg.lines() {
+            self.output_lines.push(OutputLine {
+                text: line.to_string(),
+                kind: OutputKind::Warning,
+            });
+        }
+        self.trim_output();
     }
 
     pub fn log_error(&mut self, msg: &str) {
-        self.logs.push(format!("✖ [ERROR] {}", msg));
-        self.limit_logs();
+        for line in msg.lines() {
+            self.output_lines.push(OutputLine {
+                text: line.to_string(),
+                kind: OutputKind::Error,
+            });
+        }
+        self.trim_output();
     }
 
-    pub fn log_system(&mut self, msg: &str) {
-        self.logs.push(format!("⚙ [SYSTEM] {}", msg));
-        self.limit_logs();
+    pub fn clear_output(&mut self) {
+        self.output_lines.clear();
+        self.output_scroll = 0;
+        self.log_plain("$");
     }
 
-    pub fn clear_log(&mut self) {
-        self.logs.clear();
-        self.log_system("Execution log & activity cleared.");
-    }
-
-    fn limit_logs(&mut self) {
-        if self.logs.len() > 300 {
-            let drain_count = self.logs.len() - 300;
-            self.logs.drain(0..drain_count);
+    fn trim_output(&mut self) {
+        if self.output_lines.len() > 500 {
+            let drain = self.output_lines.len() - 500;
+            self.output_lines.drain(0..drain);
         }
     }
 
-    pub fn next_command(&mut self) {
-        if self.selected_index + 1 < COMMANDS.len() {
-            self.selected_index += 1;
+    // Navigation
+    pub fn next_nav(&mut self) {
+        if self.selected_nav + 1 < NAV_ITEMS.len() {
+            self.selected_nav += 1;
         } else {
-            self.selected_index = 0;
+            self.selected_nav = 0;
         }
+        self.current_view = NAV_ITEMS[self.selected_nav].section;
     }
 
-    pub fn previous_command(&mut self) {
-        if self.selected_index > 0 {
-            self.selected_index -= 1;
+    pub fn prev_nav(&mut self) {
+        if self.selected_nav > 0 {
+            self.selected_nav -= 1;
         } else {
-            self.selected_index = COMMANDS.len() - 1;
+            self.selected_nav = NAV_ITEMS.len() - 1;
+        }
+        self.current_view = NAV_ITEMS[self.selected_nav].section;
+    }
+
+    pub fn select_nav_section(&mut self, section: NavSection) {
+        if let Some(idx) = NAV_ITEMS.iter().position(|item| item.section == section) {
+            self.selected_nav = idx;
+            self.current_view = section;
         }
     }
 
-    pub fn select_action(&mut self, action: CommandAction) {
-        if let Some(pos) = COMMANDS.iter().position(|c| c.action == action) {
-            self.selected_index = pos;
-        }
-    }
-
-    pub fn execute_selected(&mut self) {
-        let action = COMMANDS[self.selected_index].action;
-        self.execute_action(action);
-    }
-
-    pub fn execute_action(&mut self, action: CommandAction) {
-        match action {
-            CommandAction::Quit => {
-                self.should_quit = true;
+    pub fn trigger_action(&mut self, section: NavSection) {
+        match section {
+            NavSection::Dashboard => {
+                self.select_nav_section(NavSection::Dashboard);
             }
-            CommandAction::Help => {
-                self.active_modal = ActiveModal::Help;
-            }
-            CommandAction::Init => {
-                self.run_init();
-            }
-            CommandAction::Status => {
+            NavSection::Status => {
                 self.run_status();
+                self.select_nav_section(NavSection::Status);
             }
-            CommandAction::Add => {
-                if self.input_path.is_empty() {
-                    self.input_path = ".".to_string();
-                }
+            NavSection::Stage => {
+                self.input_path = ".".to_string();
                 self.cursor_pos = self.input_path.chars().count();
                 self.active_modal = ActiveModal::PromptAdd;
             }
-            CommandAction::Commit => {
+            NavSection::Commit => {
                 self.input_message.clear();
                 self.cursor_pos = 0;
                 self.active_modal = ActiveModal::PromptCommit;
             }
-            CommandAction::Log => {
-                self.run_log();
+            NavSection::Log => {
+                self.refresh_state();
+                self.select_nav_section(NavSection::Log);
             }
-            CommandAction::Push => {
+            NavSection::Branches => {
+                self.refresh_state();
+                self.select_nav_section(NavSection::Branches);
+            }
+            NavSection::Checkout => {
+                self.input_checkout.clear();
+                self.cursor_pos = 0;
+                self.active_modal = ActiveModal::PromptCheckout;
+            }
+            NavSection::Merge => {
+                if self.repo.working_tree.is_merging {
+                    self.select_nav_section(NavSection::Merge);
+                } else {
+                    self.input_merge.clear();
+                    self.cursor_pos = 0;
+                    self.active_modal = ActiveModal::PromptMerge;
+                }
+            }
+            NavSection::Fetch => {
+                self.run_fetch();
+            }
+            NavSection::Pull => {
+                self.run_pull();
+            }
+            NavSection::Push => {
                 self.run_push();
             }
-            CommandAction::WriteTree => {
-                self.run_write_tree();
-            }
-            CommandAction::Whoami => {
-                self.run_whoami();
-            }
-            CommandAction::RemoteAdd => {
+            NavSection::Remote => {
+                self.remote_name = "origin".to_string();
+                self.remote_url = "http://localhost:3000".to_string();
                 self.remote_field = RemoteField::Name;
                 self.cursor_pos = self.remote_name.chars().count();
                 self.active_modal = ActiveModal::PromptRemoteAdd;
             }
-            CommandAction::Logout => {
-                self.run_logout();
+            NavSection::Whoami => {
+                self.run_whoami();
             }
-            CommandAction::ClearLog => {
-                self.clear_log();
+            NavSection::Logout => {
+                self.active_modal = ActiveModal::ConfirmLogout;
+            }
+            NavSection::Rm => {
+                self.input_rm_path.clear();
+                self.cursor_pos = 0;
+                self.active_modal = ActiveModal::PromptRm;
+            }
+            NavSection::Help => {
+                self.active_modal = ActiveModal::Help;
+            }
+            NavSection::Quit => {
+                self.should_quit = true;
             }
         }
     }
 
-    fn run_init(&mut self) {
-        self.log_info("Executing `rusty init`...");
-        match crate::repository::init() {
+    // Backend Execution Handlers
+    pub fn run_init(&mut self) {
+        self.log_cmd("rusty init");
+        let (res, out) = capture_stdout(|| crate::repository::init());
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(_) => {
-                self.log_success("Repository initialized successfully in .rusty");
-                self.refresh_repo_state();
+                self.log_success("Initialized empty Rusty repository in .rusty/");
+                self.status_message = "Repository initialized".to_string();
             }
             Err(e) => {
                 self.log_error(&format!("Init failed: {}", e));
             }
         }
+        self.refresh_state();
     }
 
-    fn run_status(&mut self) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_status(&mut self) {
+        self.refresh_state();
+        self.log_cmd("rusty status");
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository. Run 'rusty init' first.");
             return;
         };
 
-        self.log_info("Checking status...");
-        match capture_status(&repo_path) {
-            Ok(lines) => {
-                if lines.is_empty() {
-                    self.log_success("Working tree is clean.");
-                } else {
-                    for line in lines {
-                        self.log_info(&line);
-                    }
-                }
-            }
-            Err(e) => self.log_error(&format!("Status failed: {}", e)),
+        let (res, out) = capture_stdout(|| crate::status::check_status(&repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        if let Err(e) = res {
+            self.log_error(&format!("Status error: {}", e));
         }
     }
 
-    pub fn run_add(&mut self, file: String) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_add(&mut self, path: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
             return;
         };
 
-        let target = if file.trim().is_empty() {
+        let target = if path.trim().is_empty() {
             "."
         } else {
-            file.trim()
+            path.trim()
         };
-        self.log_info(&format!("Staging files from '{}'...", target));
+        self.log_cmd(&format!("rusty add {}", target));
 
-        match crate::add::add_file(Path::new(target), &repo_path) {
+        let (res, out) = capture_stdout(|| crate::add::add_file(Path::new(target), &repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(_) => {
                 self.log_success(&format!("Staged '{}' into index.", target));
+                self.status_message = format!("Staged {}", target);
             }
             Err(e) => {
                 self.log_error(&format!("Add failed: {}", e));
             }
         }
+        self.refresh_state();
     }
 
-    pub fn run_commit(&mut self, msg: String) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_commit(&mut self, message: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
             return;
         };
 
-        if msg.trim().is_empty() {
+        if message.trim().is_empty() {
             self.log_error("Commit message cannot be empty.");
             return;
         }
 
-        self.log_info(&format!("Creating commit: \"{}\"...", msg.trim()));
-        match crate::commit::create_commit(&repo_path, msg.trim().to_string()) {
+        self.log_cmd(&format!("rusty commit -m \"{}\"", message.trim()));
+
+        let msg = message.trim().to_string();
+        let (res, out) = capture_stdout(|| crate::commit::create_commit(&repo_path, msg));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(hash) => {
-                self.log_success(&format!("Committed: {}", hash));
-                self.refresh_repo_state();
+                let short = if hash.len() >= 8 { &hash[..8] } else { &hash };
+                self.log_success(&format!(
+                    "[{} {}] Created commit.",
+                    self.repo.current_branch, short
+                ));
+                self.status_message = format!("Committed {}", short);
             }
             Err(e) => {
                 self.log_error(&format!("Commit failed: {}", e));
             }
         }
+        self.refresh_state();
     }
 
-    fn run_log(&mut self) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_create_branch(&mut self, name: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
             return;
         };
 
-        self.log_info("Fetching commit log...");
-        match capture_log(&repo_path) {
-            Ok(commits) => {
-                if commits.is_empty() {
-                    self.log_warn("No commits yet.");
-                } else {
-                    for c in commits {
-                        self.log_info(&c);
-                    }
-                }
+        let name = name.trim();
+        if name.is_empty() {
+            self.log_error("Branch name cannot be empty.");
+            return;
+        }
+
+        self.log_cmd(&format!("rusty branch {}", name));
+        let (res, out) = capture_stdout(|| crate::branch::create_branch(&repo_path, name));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success(&format!("Created branch '{}'", name));
+                self.status_message = format!("Created branch {}", name);
             }
-            Err(e) => self.log_error(&format!("Log error: {}", e)),
+            Err(e) => {
+                self.log_error(&format!("Branch creation failed: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_checkout(&mut self, branch: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        let branch = branch.trim();
+        if branch.is_empty() {
+            self.log_error("Branch name cannot be empty.");
+            return;
+        }
+
+        self.log_cmd(&format!("rusty checkout {}", branch));
+        let (res, out) = capture_stdout(|| crate::checkout::checkout(&repo_path, branch));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success(&format!("Switched to branch '{}'", branch));
+                self.status_message = format!("Switched to {}", branch);
+            }
+            Err(e) => {
+                self.log_error(&format!("Checkout failed: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_merge(&mut self, target: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        let target = target.trim();
+        if target.is_empty() {
+            self.log_error("Target branch cannot be empty.");
+            return;
+        }
+
+        self.log_cmd(&format!("rusty merge {}", target));
+        let (res, out) = capture_stdout(|| crate::merge::merge(&repo_path, target));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success(&format!("Merged '{}' successfully.", target));
+                self.status_message = format!("Merged {}", target);
+            }
+            Err(e) => {
+                self.log_error(&format!("Merge: {}", e));
+            }
+        }
+        self.refresh_state();
+        if self.repo.working_tree.is_merging {
+            self.select_nav_section(NavSection::Merge);
         }
     }
 
-    fn run_push(&mut self) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_merge_abort(&mut self) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        self.log_cmd("rusty merge --abort");
+        let (res, out) = capture_stdout(|| crate::merge::merge_abort(&repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success("Merge aborted. Working tree restored to HEAD.");
+                self.status_message = "Merge aborted".to_string();
+            }
+            Err(e) => {
+                self.log_error(&format!("Merge abort failed: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_fetch(&mut self) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        if self.creds.is_none() {
+            self.log_warn("Fetch requires authentication. Please log in first.");
+            self.open_login_modal();
+            return;
+        }
+
+        self.log_cmd("rusty fetch");
+        let (res, out) = capture_stdout(|| crate::fetch::fetch(&repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success("Fetch completed successfully.");
+                self.status_message = "Fetch complete".to_string();
+            }
+            Err(e) => {
+                self.log_error(&format!("Fetch error: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_pull(&mut self) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        if self.creds.is_none() {
+            self.log_warn("Pull requires authentication. Please log in first.");
+            self.open_login_modal();
+            return;
+        }
+
+        self.log_cmd("rusty pull");
+        let (res, out) = capture_stdout(|| crate::pull::pull(&repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success("Pull completed successfully.");
+                self.status_message = "Pull complete".to_string();
+            }
+            Err(e) => {
+                self.log_error(&format!("Pull error: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_push(&mut self) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
             return;
         };
 
         if self.creds.is_none() {
             self.log_warn("Push requires authentication. Opening login dialog...");
-            self.auth_field = AuthField::Email;
-            self.cursor_pos = self.auth_email.chars().count();
-            self.active_modal = ActiveModal::AuthLogin;
+            self.open_login_modal();
             return;
         }
 
-        self.log_info("Pushing objects to remote repository...");
-        match crate::push::push(&repo_path) {
+        self.log_cmd("rusty push");
+        let (res, out) = capture_stdout(|| crate::push::push(&repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(_) => {
-                self.log_success("Push completed successfully!");
+                self.log_success("Push completed successfully.");
+                self.status_message = "Push complete".to_string();
             }
             Err(e) => {
-                self.log_error(&format!("Push failed: {}", e));
+                self.log_error(&format!("Push error: {}", e));
             }
         }
+        self.refresh_state();
     }
 
-    fn run_write_tree(&mut self) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
+    pub fn run_remote_add(&mut self, name: &str, url: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
             return;
         };
 
-        self.log_info("Writing index tree objects...");
-        match crate::tree::write_tree(&repo_path) {
-            Ok(hash) => {
-                self.log_success(&format!("Root tree written: {}", hash));
-            }
-            Err(e) => {
-                self.log_error(&format!("Write-tree failed: {}", e));
-            }
-        }
-    }
-
-    fn run_whoami(&mut self) {
-        match auth::load_credentials() {
-            Ok(Some(c)) => {
-                self.creds = Some(c.clone());
-                self.log_info(&format!("Active User:   {}", c.email));
-                if let Some(ref u) = c.username {
-                    self.log_info(&format!("Username:      {}", u));
-                }
-                self.log_info(&format!("Server:        {}", c.server));
-                let masked_token = if c.token.len() > 6 {
-                    format!("{}...{}", &c.token[..4], &c.token[c.token.len() - 2..])
-                } else {
-                    "******".to_string()
-                };
-                self.log_info(&format!("Token:         {}", masked_token));
-            }
-            Ok(None) => {
-                self.creds = None;
-                self.log_warn("Not logged in. Press 'u' or click login to authenticate.");
-            }
-            Err(e) => {
-                self.log_error(&format!("Failed reading credentials: {}", e));
-            }
-        }
-    }
-
-    pub fn run_remote_add(&mut self, name: String, url: String) {
-        self.refresh_repo_state();
-        let Some(repo_path) = self.repo_path.clone() else {
-            self.log_error("Not a rusty repository. Run 'Init' first.");
-            return;
-        };
-
-        if name.trim().is_empty() || url.trim().is_empty() {
+        let name = name.trim();
+        let url = url.trim();
+        if name.is_empty() || url.is_empty() {
             self.log_error("Remote name and URL cannot be empty.");
             return;
         }
 
-        self.log_info(&format!(
-            "Adding remote '{}' -> {}",
-            name.trim(),
-            url.trim()
-        ));
-        match crate::remote::add_remote(&repo_path, name.trim(), url.trim()) {
+        self.log_cmd(&format!("rusty remote add {} {}", name, url));
+        let (res, out) = capture_stdout(|| crate::remote::add_remote(&repo_path, name, url));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(_) => {
-                self.log_success(&format!("Added remote '{}'!", name.trim()));
+                self.log_success(&format!("Added remote '{}' -> {}", name, url));
+                self.status_message = format!("Remote added: {}", name);
             }
             Err(e) => {
-                self.log_error(&format!("Failed adding remote: {}", e));
+                self.log_error(&format!("Remote error: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_rm_cached(&mut self, path: &str) {
+        self.refresh_state();
+        let Some(repo_path) = self.repo.repo_path.clone() else {
+            self.log_error("Not a rusty repository.");
+            return;
+        };
+
+        let path = path.trim();
+        if path.is_empty() {
+            self.log_error("Path cannot be empty.");
+            return;
+        }
+
+        self.log_cmd(&format!("rusty rm --cached {}", path));
+        let (res, out) = capture_stdout(|| crate::rm::rm_cached(path, &repo_path));
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
+            Ok(_) => {
+                self.log_success(&format!("Removed '{}' from index.", path));
+                self.status_message = format!("Removed from index: {}", path);
+            }
+            Err(e) => {
+                self.log_error(&format!("Rm failed: {}", e));
+            }
+        }
+        self.refresh_state();
+    }
+
+    pub fn run_whoami(&mut self) {
+        self.log_cmd("rusty whoami");
+        match auth::load_credentials() {
+            Ok(Some(creds)) => {
+                self.creds = Some(creds.clone());
+                self.log_info(&format!("Logged in as: {}", creds.email));
+                if let Some(ref u) = creds.username {
+                    self.log_info(&format!("Username:     {}", u));
+                }
+                self.log_info(&format!("Server:       {}", creds.server));
+            }
+            Ok(None) => {
+                self.creds = None;
+                self.log_warn("Not logged in. Press [Tab] to authenticate.");
+            }
+            Err(e) => {
+                self.log_error(&format!("Credentials error: {}", e));
             }
         }
     }
 
-    fn run_logout(&mut self) {
-        match auth::logout() {
+    pub fn run_logout(&mut self) {
+        self.log_cmd("rusty logout");
+        // auth::logout() calls println!() internally. We must capture its stdout
+        // output so it never writes raw bytes directly to the TUI's alternate screen,
+        // which would corrupt the terminal display ("UI disappears" bug).
+        let (res, out) = capture_stdout(|| auth::logout());
+        if !out.trim().is_empty() {
+            self.log_plain(out.trim());
+        }
+        match res {
             Ok(_) => {
                 self.creds = None;
-                self.log_warn("Logged out. Credentials removed.");
+                self.log_success("Logged out successfully. Credentials removed.");
+                self.status_message = "Logged out".to_string();
             }
             Err(e) => {
                 self.log_error(&format!("Logout error: {}", e));
             }
         }
+        // Return to Dashboard so the nav doesn't stay stuck on the Logout item.
+        self.select_nav_section(NavSection::Dashboard);
+    }
+
+    pub fn open_login_modal(&mut self) {
+        self.auth_field = AuthField::Email;
+        self.cursor_pos = self.auth_email.chars().count();
+        self.auth_error = None;
+        self.active_modal = ActiveModal::AuthLogin;
     }
 
     pub fn submit_auth_login(&mut self) {
@@ -608,14 +1003,13 @@ impl App {
 
         self.log_info(&format!("Authenticating with {}...", server));
 
-        let client = reqwest::blocking::Client::builder()
+        let client = match reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(5))
-            .build();
-
-        let client = match client {
+            .build()
+        {
             Ok(c) => c,
             Err(e) => {
-                self.auth_error = Some(format!("HTTP client error: {}", e));
+                self.auth_error = Some(format!("HTTP error: {}", e));
                 return;
             }
         };
@@ -629,7 +1023,6 @@ impl App {
             }))
             .send();
 
-        // If 404, fallback to /api/v1/auth/cli-login
         if let Ok(ref res) = resp {
             if res.status() == reqwest::StatusCode::NOT_FOUND {
                 let alt_cli_url = format!("{}/api/v1/auth/cli-login", server);
@@ -659,20 +1052,15 @@ impl App {
                 } else {
                     let err_msg =
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                            if let Some(msg) = parsed["message"].as_str() {
-                                msg.to_string()
-                            } else {
-                                text
-                            }
+                            parsed["message"].as_str().unwrap_or(&text).to_string()
                         } else {
                             text
                         };
-                    self.auth_error = Some(format!("Auth rejected ({}): {}", status, err_msg));
+                    self.auth_error = Some(format!("Rejected ({}): {}", status, err_msg));
                     (false, None)
                 }
             }
             Err(err) => {
-                // Try fallback verification endpoint
                 let alt_url = format!("{}/auth/verify-token", server);
                 match client
                     .post(&alt_url)
@@ -681,7 +1069,7 @@ impl App {
                 {
                     Ok(res) if res.status().is_success() => (true, None),
                     _ => {
-                        self.auth_error = Some(format!("Connection error to {}: {}", server, err));
+                        self.auth_error = Some(format!("Connection error: {}", err));
                         (false, None)
                     }
                 }
@@ -696,7 +1084,6 @@ impl App {
                 username,
             };
 
-            // Save credentials
             if let Ok(home) = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Home missing")) {
                 let rusty_home = home.join(".rusty");
                 let _ = std::fs::create_dir_all(&rusty_home);
@@ -709,15 +1096,19 @@ impl App {
             self.creds = Some(creds);
             self.auth_error = None;
             self.active_modal = ActiveModal::None;
-            self.log_success(&format!("Successfully logged in as {}!", email));
+            self.log_success(&format!("Successfully logged in as {}", email));
+            self.status_message = format!("Logged in as {}", email);
         }
     }
 
-    /// Access the active text field and cursor position for typing and editing
     pub fn get_active_input_mut(&mut self) -> Option<(&mut String, &mut usize)> {
         match self.active_modal {
             ActiveModal::PromptAdd => Some((&mut self.input_path, &mut self.cursor_pos)),
             ActiveModal::PromptCommit => Some((&mut self.input_message, &mut self.cursor_pos)),
+            ActiveModal::PromptBranch => Some((&mut self.input_branch, &mut self.cursor_pos)),
+            ActiveModal::PromptCheckout => Some((&mut self.input_checkout, &mut self.cursor_pos)),
+            ActiveModal::PromptMerge => Some((&mut self.input_merge, &mut self.cursor_pos)),
+            ActiveModal::PromptRm => Some((&mut self.input_rm_path, &mut self.cursor_pos)),
             ActiveModal::PromptRemoteAdd => match self.remote_field {
                 RemoteField::Name => Some((&mut self.remote_name, &mut self.cursor_pos)),
                 RemoteField::Url => Some((&mut self.remote_url, &mut self.cursor_pos)),
@@ -729,6 +1120,536 @@ impl App {
             },
             _ => None,
         }
+    }
+}
+
+pub fn run_tui() -> Result<()> {
+    // Set up a panic hook that restores the terminal before printing the panic message.
+    // This prevents the terminal from being stuck in raw/alternate-screen mode on a crash.
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // Best-effort terminal restore on panic
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        original_hook(info);
+    }));
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let mut app = App::new();
+
+    let res = run_loop(&mut terminal, &mut app);
+
+    // Always restore terminal, even if run_loop returned an error.
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
+    let _ = terminal.show_cursor();
+
+    // Restore the original panic hook now that we're done.
+    let _ = std::panic::take_hook();
+
+    if let Err(err) = res {
+        eprintln!("TUI encountered an error: {:?}", err);
+    }
+
+    Ok(())
+}
+
+fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
+    loop {
+        terminal.draw(|f| ui::draw(f, app))?;
+
+        if app.should_quit {
+            return Ok(());
+        }
+
+        if event::poll(Duration::from_millis(50))? {
+            while event::poll(Duration::from_millis(0))? {
+                match event::read()? {
+                    Event::Key(key) => {
+                        if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                            handle_key(app, key.code, key.modifiers);
+                        }
+                    }
+                    Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            handle_mouse_click(app, mouse.column, mouse.row);
+                        }
+                        MouseEventKind::ScrollUp => {
+                            if app.output_scroll > 0 {
+                                app.output_scroll = app.output_scroll.saturating_sub(1);
+                            }
+                        }
+                        MouseEventKind::ScrollDown => {
+                            app.output_scroll = app.output_scroll.saturating_add(1);
+                        }
+                        _ => {}
+                    },
+                    Event::Paste(text) => {
+                        handle_paste(app, &text);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
+    // Check against registered hitboxes
+    for (rect, action) in app.hitboxes.clone() {
+        if col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+        {
+            match action {
+                HitAction::Nav(idx) => {
+                    if idx < NAV_ITEMS.len() {
+                        app.selected_nav = idx;
+                        app.current_view = NAV_ITEMS[idx].section;
+                    }
+                }
+                HitAction::QuickAction(section) => {
+                    app.trigger_action(section);
+                }
+                HitAction::ClearOutput => {
+                    app.clear_output();
+                }
+                HitAction::ViewAllCommits => {
+                    app.select_nav_section(NavSection::Log);
+                }
+                HitAction::SelectBranch(idx) => {
+                    app.selected_branch_idx = idx;
+                }
+                HitAction::SelectCommit(idx) => {
+                    app.selected_commit_idx = idx;
+                }
+                HitAction::SelectConflict(idx) => {
+                    app.selected_conflict_idx = idx;
+                }
+                HitAction::ModalSubmit => {
+                    submit_active_modal(app);
+                }
+                HitAction::ModalCancel => {
+                    app.active_modal = ActiveModal::None;
+                }
+            }
+            return;
+        }
+    }
+}
+
+fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    if modifiers.contains(KeyModifiers::CONTROL)
+        && (code == KeyCode::Char('c') || code == KeyCode::Char('C'))
+    {
+        app.should_quit = true;
+        return;
+    }
+
+    match app.active_modal {
+        ActiveModal::None => handle_main_keys(app, code, modifiers),
+        _ => handle_modal_keys(app, code, modifiers),
+    }
+}
+
+fn handle_main_keys(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) {
+    match code {
+        KeyCode::Char('q') | KeyCode::Char('Q') => app.should_quit = true,
+        KeyCode::Up | KeyCode::Char('k') => app.prev_nav(),
+        KeyCode::Down | KeyCode::Char('j') => app.next_nav(),
+        KeyCode::Enter => {
+            let section = NAV_ITEMS[app.selected_nav].section;
+            app.trigger_action(section);
+        }
+        KeyCode::Tab => {
+            app.open_login_modal();
+        }
+        KeyCode::Char('x') | KeyCode::Char('X') => {
+            if app.current_view == NavSection::Merge && app.repo.working_tree.is_merging {
+                app.active_modal = ActiveModal::ConfirmAbortMerge;
+            } else {
+                app.clear_output();
+            }
+        }
+        KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::Char('H') => {
+            app.active_modal = ActiveModal::Help;
+        }
+
+        // Direct Quick Action Shortcuts (matching the dashboard grid)
+        KeyCode::Char('s') | KeyCode::Char('S') => app.trigger_action(NavSection::Status),
+        KeyCode::Char('a') | KeyCode::Char('A') => app.trigger_action(NavSection::Stage),
+        KeyCode::Char('c') | KeyCode::Char('C') => app.trigger_action(NavSection::Commit),
+        KeyCode::Char('l') | KeyCode::Char('L') => app.trigger_action(NavSection::Log),
+        KeyCode::Char('m') | KeyCode::Char('M') => app.trigger_action(NavSection::Merge),
+        KeyCode::Char('b') | KeyCode::Char('B') => {
+            // If in dashboard, prompt branch modal or go to branch view
+            app.input_branch.clear();
+            app.cursor_pos = 0;
+            app.active_modal = ActiveModal::PromptBranch;
+        }
+        KeyCode::Char('o') => app.trigger_action(NavSection::Checkout),
+        KeyCode::Char('p') | KeyCode::Char('P') => app.trigger_action(NavSection::Push),
+        KeyCode::Char('f') | KeyCode::Char('F') => app.trigger_action(NavSection::Fetch),
+        KeyCode::Char('u') | KeyCode::Char('U') => app.trigger_action(NavSection::Pull),
+        KeyCode::Char('r') => app.trigger_action(NavSection::Remote),
+        KeyCode::Char('i') | KeyCode::Char('I') => {
+            if !app.repo.is_initialized {
+                app.run_init();
+            } else {
+                app.active_modal = ActiveModal::ConfirmInit;
+            }
+        }
+        KeyCode::Char('w') => app.trigger_action(NavSection::Whoami),
+        KeyCode::Char('O') => app.trigger_action(NavSection::Logout),
+        KeyCode::Char('R') => app.trigger_action(NavSection::Rm),
+
+        // Number shortcuts 1-9 for navigation
+        KeyCode::Char('1') => app.select_nav_section(NavSection::Dashboard),
+        KeyCode::Char('2') => app.trigger_action(NavSection::Status),
+        KeyCode::Char('3') => app.trigger_action(NavSection::Stage),
+        KeyCode::Char('4') => app.trigger_action(NavSection::Commit),
+        KeyCode::Char('5') => app.trigger_action(NavSection::Log),
+        KeyCode::Char('6') => app.select_nav_section(NavSection::Branches),
+        KeyCode::Char('7') => app.trigger_action(NavSection::Checkout),
+        KeyCode::Char('8') => app.select_nav_section(NavSection::Merge),
+        KeyCode::Char('9') => app.trigger_action(NavSection::Push),
+
+        // Sub-view specific controls
+        KeyCode::PageUp => {
+            app.output_scroll = app.output_scroll.saturating_add(5);
+        }
+        KeyCode::PageDown => {
+            app.output_scroll = app.output_scroll.saturating_sub(5);
+        }
+        KeyCode::Esc => {
+            if app.current_view != NavSection::Dashboard {
+                app.select_nav_section(NavSection::Dashboard);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_modal_keys(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    match app.active_modal {
+        ActiveModal::None => {}
+
+        ActiveModal::Help => {
+            if matches!(
+                code,
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('?')
+            ) {
+                app.active_modal = ActiveModal::None;
+            }
+        }
+
+        ActiveModal::ConfirmAbortMerge => match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                app.active_modal = ActiveModal::None;
+                app.run_merge_abort();
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.active_modal = ActiveModal::None;
+            }
+            _ => {}
+        },
+
+        ActiveModal::ConfirmLogout => match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                app.active_modal = ActiveModal::None;
+                app.run_logout();
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.active_modal = ActiveModal::None;
+            }
+            _ => {}
+        },
+
+        ActiveModal::ConfirmInit => match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                app.active_modal = ActiveModal::None;
+                app.run_init();
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                app.active_modal = ActiveModal::None;
+            }
+            _ => {}
+        },
+
+        ActiveModal::AuthLogin => match code {
+            KeyCode::Esc => {
+                app.active_modal = ActiveModal::None;
+                app.auth_error = None;
+            }
+            KeyCode::Tab | KeyCode::Down => {
+                app.auth_field = match app.auth_field {
+                    AuthField::Email => AuthField::Token,
+                    AuthField::Token => AuthField::Server,
+                    AuthField::Server => AuthField::Email,
+                };
+                app.cursor_pos = match app.auth_field {
+                    AuthField::Email => app.auth_email.chars().count(),
+                    AuthField::Token => app.auth_token.chars().count(),
+                    AuthField::Server => app.auth_server.chars().count(),
+                };
+            }
+            KeyCode::BackTab | KeyCode::Up => {
+                app.auth_field = match app.auth_field {
+                    AuthField::Email => AuthField::Server,
+                    AuthField::Token => AuthField::Email,
+                    AuthField::Server => AuthField::Token,
+                };
+                app.cursor_pos = match app.auth_field {
+                    AuthField::Email => app.auth_email.chars().count(),
+                    AuthField::Token => app.auth_token.chars().count(),
+                    AuthField::Server => app.auth_server.chars().count(),
+                };
+            }
+            KeyCode::Enter => {
+                app.submit_auth_login();
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptRemoteAdd => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Tab | KeyCode::Down => {
+                app.remote_field = match app.remote_field {
+                    RemoteField::Name => RemoteField::Url,
+                    RemoteField::Url => RemoteField::Name,
+                };
+                app.cursor_pos = match app.remote_field {
+                    RemoteField::Name => app.remote_name.chars().count(),
+                    RemoteField::Url => app.remote_url.chars().count(),
+                };
+            }
+            KeyCode::BackTab | KeyCode::Up => {
+                app.remote_field = match app.remote_field {
+                    RemoteField::Name => RemoteField::Url,
+                    RemoteField::Url => RemoteField::Name,
+                };
+                app.cursor_pos = match app.remote_field {
+                    RemoteField::Name => app.remote_name.chars().count(),
+                    RemoteField::Url => app.remote_url.chars().count(),
+                };
+            }
+            KeyCode::Enter => {
+                let name = app.remote_name.clone();
+                let url = app.remote_url.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_remote_add(&name, &url);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptAdd => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let target = app.input_path.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_add(&target);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptCommit => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let msg = app.input_message.clone();
+                app.active_modal = ActiveModal::None;
+                app.input_message.clear();
+                app.cursor_pos = 0;
+                app.run_commit(&msg);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptBranch => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let name = app.input_branch.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_create_branch(&name);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptCheckout => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let branch = app.input_checkout.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_checkout(&branch);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptMerge => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let branch = app.input_merge.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_merge(&branch);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+
+        ActiveModal::PromptRm => match code {
+            KeyCode::Esc => app.active_modal = ActiveModal::None,
+            KeyCode::Enter => {
+                let path = app.input_rm_path.clone();
+                app.active_modal = ActiveModal::None;
+                app.run_rm_cached(&path);
+            }
+            _ => {
+                handle_text_input(app, code, modifiers);
+            }
+        },
+    }
+}
+
+fn submit_active_modal(app: &mut App) {
+    match app.active_modal {
+        ActiveModal::AuthLogin => app.submit_auth_login(),
+        ActiveModal::PromptAdd => {
+            let p = app.input_path.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_add(&p);
+        }
+        ActiveModal::PromptCommit => {
+            let m = app.input_message.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_commit(&m);
+        }
+        ActiveModal::PromptBranch => {
+            let b = app.input_branch.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_create_branch(&b);
+        }
+        ActiveModal::PromptCheckout => {
+            let c = app.input_checkout.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_checkout(&c);
+        }
+        ActiveModal::PromptMerge => {
+            let m = app.input_merge.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_merge(&m);
+        }
+        ActiveModal::PromptRemoteAdd => {
+            let n = app.remote_name.clone();
+            let u = app.remote_url.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_remote_add(&n, &u);
+        }
+        ActiveModal::PromptRm => {
+            let p = app.input_rm_path.clone();
+            app.active_modal = ActiveModal::None;
+            app.run_rm_cached(&p);
+        }
+        ActiveModal::ConfirmAbortMerge => {
+            app.active_modal = ActiveModal::None;
+            app.run_merge_abort();
+        }
+        ActiveModal::ConfirmLogout => {
+            app.active_modal = ActiveModal::None;
+            app.run_logout();
+        }
+        ActiveModal::ConfirmInit => {
+            app.active_modal = ActiveModal::None;
+            app.run_init();
+        }
+        _ => {
+            app.active_modal = ActiveModal::None;
+        }
+    }
+}
+
+// Text editing helpers
+fn handle_text_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    let Some((text, cursor)) = app.get_active_input_mut() else {
+        return false;
+    };
+
+    match code {
+        KeyCode::Char(c) => {
+            if modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT) {
+                match c {
+                    'u' | 'U' => {
+                        text.clear();
+                        *cursor = 0;
+                        return true;
+                    }
+                    'w' | 'W' => {
+                        delete_word_before(text, cursor);
+                        return true;
+                    }
+                    'a' | 'A' => {
+                        *cursor = 0;
+                        return true;
+                    }
+                    'e' | 'E' => {
+                        *cursor = text.chars().count();
+                        return true;
+                    }
+                    _ => return false,
+                }
+            }
+            insert_char(text, *cursor, c);
+            *cursor += 1;
+            true
+        }
+        KeyCode::Backspace => {
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                delete_word_before(text, cursor);
+            } else if *cursor > 0 {
+                *cursor = remove_char_before(text, *cursor);
+            }
+            true
+        }
+        KeyCode::Delete => {
+            remove_char_at(text, *cursor);
+            true
+        }
+        KeyCode::Left => {
+            *cursor = cursor.saturating_sub(1);
+            true
+        }
+        KeyCode::Right => {
+            let len = text.chars().count();
+            *cursor = (*cursor + 1).min(len);
+            true
+        }
+        KeyCode::Home => {
+            *cursor = 0;
+            true
+        }
+        KeyCode::End => {
+            *cursor = text.chars().count();
+            true
+        }
+        _ => false,
     }
 }
 
@@ -781,502 +1702,19 @@ fn delete_word_before(text: &mut String, cursor: &mut usize) {
     *cursor = new_pos;
 }
 
-fn insert_str(s: &mut String, pos: usize, text: &str) -> usize {
-    let mut chars: Vec<char> = s.chars().collect();
-    let idx = pos.min(chars.len());
-    let added_chars: Vec<char> = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
-    let count = added_chars.len();
-    for (i, c) in added_chars.into_iter().enumerate() {
-        chars.insert(idx + i, c);
-    }
-    *s = chars.into_iter().collect();
-    pos + count
-}
-
-fn handle_text_input(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> bool {
-    let Some((text, cursor)) = app.get_active_input_mut() else {
-        return false;
-    };
-
-    match code {
-        KeyCode::Char(c) => {
-            // Only intercept genuine CTRL combos (not SHIFT which is used for uppercase)
-            if modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::ALT) {
-                match c {
-                    'u' | 'U' => {
-                        text.clear();
-                        *cursor = 0;
-                        return true;
-                    }
-                    'w' | 'W' => {
-                        delete_word_before(text, cursor);
-                        return true;
-                    }
-                    'a' | 'A' => {
-                        // Ctrl+A: move to beginning
-                        *cursor = 0;
-                        return true;
-                    }
-                    'e' | 'E' => {
-                        // Ctrl+E: move to end
-                        *cursor = text.chars().count();
-                        return true;
-                    }
-                    _ => {
-                        // Don't eat other ctrl combos — they might be terminal sequences
-                        return false;
-                    }
-                }
-            }
-            // Insert the character (works for plain chars and SHIFT+char for uppercase)
-            insert_char(text, *cursor, c);
-            *cursor += 1;
-            true
-        }
-        KeyCode::Backspace => {
-            if modifiers.contains(KeyModifiers::CONTROL) {
-                // Ctrl+Backspace: delete word
-                delete_word_before(text, cursor);
-            } else if *cursor > 0 {
-                *cursor = remove_char_before(text, *cursor);
-            }
-            true
-        }
-        KeyCode::Delete => {
-            remove_char_at(text, *cursor);
-            true
-        }
-        KeyCode::Left => {
-            if modifiers.contains(KeyModifiers::CONTROL) {
-                // Ctrl+Left: jump word left
-                let chars: Vec<char> = text.chars().collect();
-                let mut pos = *cursor;
-                while pos > 0 && chars[pos - 1].is_whitespace() {
-                    pos -= 1;
-                }
-                while pos > 0 && !chars[pos - 1].is_whitespace() {
-                    pos -= 1;
-                }
-                *cursor = pos;
-            } else {
-                *cursor = cursor.saturating_sub(1);
-            }
-            true
-        }
-        KeyCode::Right => {
-            let len = text.chars().count();
-            if modifiers.contains(KeyModifiers::CONTROL) {
-                // Ctrl+Right: jump word right
-                let chars: Vec<char> = text.chars().collect();
-                let mut pos = *cursor;
-                while pos < len && chars[pos].is_whitespace() {
-                    pos += 1;
-                }
-                while pos < len && !chars[pos].is_whitespace() {
-                    pos += 1;
-                }
-                *cursor = pos;
-            } else {
-                *cursor = (*cursor + 1).min(len);
-            }
-            true
-        }
-        KeyCode::Home => {
-            *cursor = 0;
-            true
-        }
-        KeyCode::End => {
-            *cursor = text.chars().count();
-            true
-        }
-        _ => false,
-    }
-}
-
 fn handle_paste(app: &mut App, pasted: &str) {
     if let Some((text, cursor)) = app.get_active_input_mut() {
-        *cursor = insert_str(text, *cursor, pasted);
-    }
-}
-
-fn find_repo_path() -> Result<PathBuf> {
-    let mut current_dir = std::env::current_dir()?;
-
-    loop {
-        let repo_path = current_dir.join(".rusty");
-        if repo_path.is_dir() {
-            return Ok(repo_path);
+        let mut chars: Vec<char> = text.chars().collect();
+        let idx = (*cursor).min(chars.len());
+        let added: Vec<char> = pasted
+            .chars()
+            .filter(|c| *c != '\n' && *c != '\r')
+            .collect();
+        let count = added.len();
+        for (i, c) in added.into_iter().enumerate() {
+            chars.insert(idx + i, c);
         }
-        if !current_dir.pop() {
-            break;
-        }
-    }
-
-    anyhow::bail!("Not a rusty repository");
-}
-
-fn detect_branch(repo_path: &Path) -> String {
-    let head_path = repo_path.join("HEAD");
-    if let Ok(head) = std::fs::read_to_string(head_path) {
-        if let Some(branch) = head.strip_prefix("ref: refs/heads/") {
-            return branch.trim().to_string();
-        } else if let Some(branch) = head.strip_prefix("ref: ") {
-            return branch.trim().to_string();
-        }
-    }
-    "main".to_string()
-}
-
-fn capture_status(repo_path: &Path) -> Result<Vec<String>> {
-    use crate::index::Index;
-    use crate::objects;
-    use walkdir::WalkDir;
-
-    let repo_root = repo_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("Invalid repo path"))?;
-    let index = Index::load(repo_path)?;
-    let mut results = Vec::new();
-    let mut found_any = false;
-
-    for entry in WalkDir::new(repo_root) {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.components().any(|c| {
-            let s = c.as_os_str().to_string_lossy();
-            s == ".rusty" || s == ".git" || s == "target"
-        }) {
-            continue;
-        }
-
-        if !path.is_file() {
-            continue;
-        }
-
-        let relative_path = path
-            .strip_prefix(repo_root)?
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        if let Some(index_entry) = index.entries.get(&relative_path) {
-            let curr_hash = objects::hash_file(path)?;
-            if curr_hash != index_entry.blob_hash {
-                results.push(format!("📝 Modified:  {}", relative_path));
-                found_any = true;
-            }
-        } else {
-            results.push(format!("❓ Untracked: {}", relative_path));
-            found_any = true;
-        }
-    }
-
-    if !found_any {
-        results.push("✨ Working directory clean, nothing modified.".to_string());
-    }
-
-    Ok(results)
-}
-
-fn capture_log(repo_path: &Path) -> Result<Vec<String>> {
-    use crate::commit::get_commit;
-
-    let head_path = repo_path.join("HEAD");
-    let head = std::fs::read_to_string(head_path)?;
-    let branch = head.strip_prefix("ref: ").unwrap_or(&head).trim();
-    let branch_path = repo_path.join(branch);
-
-    if !branch_path.exists() {
-        return Ok(vec!["(no commits found on active branch)".to_string()]);
-    }
-
-    let hash = std::fs::read_to_string(branch_path)?;
-    let mut current_hash = hash.trim().to_string();
-
-    if current_hash.is_empty() {
-        return Ok(vec!["(empty branch reference)".to_string()]);
-    }
-
-    let mut logs = Vec::new();
-    let mut count = 0;
-
-    while !current_hash.is_empty() && count < 30 {
-        let commit = match get_commit(repo_path, &current_hash) {
-            Ok(commit) => commit,
-            Err(_) => break,
-        };
-
-        let short_hash = if current_hash.len() >= 8 {
-            &current_hash[..8]
-        } else {
-            &current_hash
-        };
-
-        logs.push(format!("● [{}] {}", short_hash, commit.message));
-
-        // Follow the first parent for the normal linear log view.
-        // Merge commits can have multiple parents; parents[0] is the
-        // current branch's history, while the other parent is the merged branch.
-        match commit.parents.first() {
-            Some(parent_hash) => {
-                current_hash = parent_hash.clone();
-            }
-            None => {
-                break;
-            }
-        }
-
-        count += 1;
-    }
-
-    Ok(logs)
-}
-
-pub fn run_tui() -> Result<()> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let mut app = App::new();
-
-    let res = run_loop(&mut terminal, &mut app);
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        eprintln!("TUI encountered an error: {:?}", err);
-    }
-
-    Ok(())
-}
-
-fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
-    loop {
-        terminal.draw(|f| ui::draw(f, app))?;
-
-        if app.should_quit {
-            return Ok(());
-        }
-
-        if event::poll(Duration::from_millis(50))? {
-            while event::poll(Duration::from_millis(0))? {
-                match event::read()? {
-                    Event::Key(key) => {
-                        if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
-                            handle_key(app, key.code, key.modifiers);
-                        }
-                    }
-                    Event::Mouse(mouse) => {
-                        if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
-                            handle_mouse_click(app, mouse.column, mouse.row);
-                        }
-                    }
-                    Event::Paste(text) => {
-                        handle_paste(app, &text);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-fn handle_mouse_click(app: &mut App, col: u16, row: u16) {
-    // Check if the clear button was clicked
-    if let Some(btn_rect) = app.clear_btn_rect {
-        if col >= btn_rect.x
-            && col < btn_rect.x + btn_rect.width
-            && row >= btn_rect.y
-            && row < btn_rect.y + btn_rect.height
-        {
-            app.clear_log();
-            return;
-        }
-    }
-}
-
-fn handle_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
-    if modifiers.contains(KeyModifiers::CONTROL)
-        && (code == KeyCode::Char('c') || code == KeyCode::Char('C'))
-    {
-        app.should_quit = true;
-        return;
-    }
-
-    match app.active_modal {
-        ActiveModal::None => match code {
-            KeyCode::Char('q') | KeyCode::Char('Q') => app.should_quit = true,
-            KeyCode::Up | KeyCode::Char('k') | KeyCode::Char('K') => app.previous_command(),
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('J') => app.next_command(),
-            KeyCode::Enter => app.execute_selected(),
-            KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::Char('H') => {
-                app.active_modal = ActiveModal::Help
-            }
-            KeyCode::Char('s') | KeyCode::Char('S') => {
-                app.select_action(CommandAction::Status);
-                app.execute_action(CommandAction::Status);
-            }
-            KeyCode::Char('a') | KeyCode::Char('A') => {
-                app.select_action(CommandAction::Add);
-                app.execute_action(CommandAction::Add);
-            }
-            KeyCode::Char('c') | KeyCode::Char('C') => {
-                app.select_action(CommandAction::Commit);
-                app.execute_action(CommandAction::Commit);
-            }
-            KeyCode::Char('l') | KeyCode::Char('L') => {
-                app.select_action(CommandAction::Log);
-                app.execute_action(CommandAction::Log);
-            }
-            KeyCode::Char('p') | KeyCode::Char('P') => {
-                app.select_action(CommandAction::Push);
-                app.execute_action(CommandAction::Push);
-            }
-            KeyCode::Char('w') | KeyCode::Char('W') => {
-                app.select_action(CommandAction::WriteTree);
-                app.execute_action(CommandAction::WriteTree);
-            }
-            KeyCode::Char('i') | KeyCode::Char('I') => {
-                app.select_action(CommandAction::Init);
-                app.execute_action(CommandAction::Init);
-            }
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                app.select_action(CommandAction::RemoteAdd);
-                app.execute_action(CommandAction::RemoteAdd);
-            }
-            KeyCode::Char('u') | KeyCode::Char('U') => {
-                app.select_action(CommandAction::Whoami);
-                app.execute_action(CommandAction::Whoami);
-            }
-            KeyCode::Char('o') | KeyCode::Char('O') => {
-                app.select_action(CommandAction::Logout);
-                app.execute_action(CommandAction::Logout);
-            }
-            KeyCode::Char('x') | KeyCode::Char('X') => {
-                app.select_action(CommandAction::ClearLog);
-                app.execute_action(CommandAction::ClearLog);
-            }
-            KeyCode::Tab => {
-                app.auth_field = AuthField::Email;
-                app.cursor_pos = app.auth_email.chars().count();
-                app.active_modal = ActiveModal::AuthLogin;
-            }
-            _ => {}
-        },
-
-        ActiveModal::AuthLogin => match code {
-            KeyCode::Esc => {
-                app.active_modal = ActiveModal::None;
-                app.auth_error = None;
-            }
-            KeyCode::Tab | KeyCode::Down => {
-                app.auth_field = match app.auth_field {
-                    AuthField::Email => AuthField::Token,
-                    AuthField::Token => AuthField::Server,
-                    AuthField::Server => AuthField::Email,
-                };
-                app.cursor_pos = match app.auth_field {
-                    AuthField::Email => app.auth_email.chars().count(),
-                    AuthField::Token => app.auth_token.chars().count(),
-                    AuthField::Server => app.auth_server.chars().count(),
-                };
-            }
-            KeyCode::BackTab | KeyCode::Up => {
-                app.auth_field = match app.auth_field {
-                    AuthField::Email => AuthField::Server,
-                    AuthField::Token => AuthField::Email,
-                    AuthField::Server => AuthField::Token,
-                };
-                app.cursor_pos = match app.auth_field {
-                    AuthField::Email => app.auth_email.chars().count(),
-                    AuthField::Token => app.auth_token.chars().count(),
-                    AuthField::Server => app.auth_server.chars().count(),
-                };
-            }
-            KeyCode::Enter => {
-                app.submit_auth_login();
-            }
-            _ => {
-                handle_text_input(app, code, modifiers);
-            }
-        },
-
-        ActiveModal::PromptAdd => match code {
-            KeyCode::Esc => app.active_modal = ActiveModal::None,
-            KeyCode::Enter => {
-                let target = app.input_path.clone();
-                app.active_modal = ActiveModal::None;
-                app.run_add(target);
-            }
-            _ => {
-                handle_text_input(app, code, modifiers);
-            }
-        },
-
-        ActiveModal::PromptCommit => match code {
-            KeyCode::Esc => app.active_modal = ActiveModal::None,
-            KeyCode::Enter => {
-                let msg = app.input_message.clone();
-                app.active_modal = ActiveModal::None;
-                app.input_message.clear();
-                app.cursor_pos = 0;
-                app.run_commit(msg);
-            }
-            _ => {
-                handle_text_input(app, code, modifiers);
-            }
-        },
-
-        ActiveModal::PromptRemoteAdd => match code {
-            KeyCode::Esc => app.active_modal = ActiveModal::None,
-            KeyCode::Tab | KeyCode::Down => {
-                app.remote_field = match app.remote_field {
-                    RemoteField::Name => RemoteField::Url,
-                    RemoteField::Url => RemoteField::Name,
-                };
-                app.cursor_pos = match app.remote_field {
-                    RemoteField::Name => app.remote_name.chars().count(),
-                    RemoteField::Url => app.remote_url.chars().count(),
-                };
-            }
-            KeyCode::BackTab | KeyCode::Up => {
-                app.remote_field = match app.remote_field {
-                    RemoteField::Name => RemoteField::Url,
-                    RemoteField::Url => RemoteField::Name,
-                };
-                app.cursor_pos = match app.remote_field {
-                    RemoteField::Name => app.remote_name.chars().count(),
-                    RemoteField::Url => app.remote_url.chars().count(),
-                };
-            }
-            KeyCode::Enter => {
-                let name = app.remote_name.clone();
-                let url = app.remote_url.clone();
-                app.active_modal = ActiveModal::None;
-                app.run_remote_add(name, url);
-            }
-            _ => {
-                handle_text_input(app, code, modifiers);
-            }
-        },
-
-        ActiveModal::Help => match code {
-            KeyCode::Esc
-            | KeyCode::Enter
-            | KeyCode::Char('q')
-            | KeyCode::Char('?')
-            | KeyCode::Char('h') => {
-                app.active_modal = ActiveModal::None;
-            }
-            _ => {}
-        },
+        *text = chars.into_iter().collect();
+        *cursor += count;
     }
 }

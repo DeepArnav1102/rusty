@@ -41,7 +41,7 @@ pub struct MergeConflict {
     pub kind: MergeConflictKind,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MergeState {
     pub merge_head: String,
     pub conflicts: Vec<MergeConflict>,
@@ -56,8 +56,7 @@ impl MergeState {
         }
 
         let data = fs::read_to_string(&state_path)?;
-        let state: MergeState =
-            serde_json::from_str(&data).context("Invalid MERGE_STATE file")?;
+        let state: MergeState = serde_json::from_str(&data).context("Invalid MERGE_STATE file")?;
 
         Ok(Some(state))
     }
@@ -114,9 +113,7 @@ pub fn read_merge_head(repo_path: &Path) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    let hash = fs::read_to_string(&merge_head_path)?
-        .trim()
-        .to_string();
+    let hash = fs::read_to_string(&merge_head_path)?.trim().to_string();
 
     if hash.is_empty() {
         Ok(None)
@@ -160,9 +157,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
         anyhow::bail!("Current branch has no commits");
     }
 
-    let current_hash = fs::read_to_string(&current_branch_path)?
-        .trim()
-        .to_string();
+    let current_hash = fs::read_to_string(&current_branch_path)?.trim().to_string();
 
     if current_hash.is_empty() {
         anyhow::bail!("Current branch has no commits");
@@ -256,8 +251,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
     // 9. Build merge plan
     // ------------------------------------------------------------
 
-    let mut plan =
-        build_merge_plan(repo_path, &base_files, &ours_files, &theirs_files)?;
+    let mut plan = build_merge_plan(repo_path, &base_files, &ours_files, &theirs_files)?;
 
     // ------------------------------------------------------------
     // 10. Prevent untracked files from being overwritten
@@ -267,10 +261,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
     for conflict in &plan.conflicts {
         if let Some(ours_hash) = ours_files.get(&conflict.path) {
-            all_paths_to_write.insert(
-                conflict.path.clone(),
-                ours_hash.clone(),
-            );
+            all_paths_to_write.insert(conflict.path.clone(), ours_hash.clone());
         }
     }
 
@@ -292,17 +283,11 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
         .context("Invalid repository path")?
         .canonicalize()?;
 
-    let conflict_paths: HashSet<String> = plan
-        .conflicts
-        .iter()
-        .map(|c| c.path.clone())
-        .collect();
+    let conflict_paths: HashSet<String> = plan.conflicts.iter().map(|c| c.path.clone()).collect();
 
     // Remove files deleted by merge.
     for path in ours_files.keys() {
-        if !plan.files.contains_key(path)
-            && !conflict_paths.contains(path)
-        {
+        if !plan.files.contains_key(path) && !conflict_paths.contains(path) {
             let full_path = repo_root.join(path);
 
             if full_path.exists() {
@@ -319,10 +304,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
             fs::create_dir_all(parent)?;
         }
 
-        let blob_path = repo_path
-            .join("objects")
-            .join("blobs")
-            .join(blob_hash);
+        let blob_path = repo_path.join("objects").join("blobs").join(blob_hash);
 
         if !blob_path.exists() {
             anyhow::bail!("Blob object not found: {}", blob_hash);
@@ -347,10 +329,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
         match conflict.kind {
             MergeConflictKind::ModifyDelete => {
                 if let Some(ours_hash) = ours_files.get(path) {
-                    let blob_path = repo_path
-                        .join("objects")
-                        .join("blobs")
-                        .join(ours_hash);
+                    let blob_path = repo_path.join("objects").join("blobs").join(ours_hash);
 
                     if blob_path.exists() {
                         let data = fs::read(&blob_path)?;
@@ -363,10 +342,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
             MergeConflictKind::DeleteModify => {
                 if let Some(theirs_hash) = theirs_files.get(path) {
-                    let blob_path = repo_path
-                        .join("objects")
-                        .join("blobs")
-                        .join(theirs_hash);
+                    let blob_path = repo_path.join("objects").join("blobs").join(theirs_hash);
 
                     if blob_path.exists() {
                         let data = fs::read(&blob_path)?;
@@ -377,16 +353,12 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
                 println!("CONFLICT (delete/modify): {}", path);
             }
 
-            MergeConflictKind::BothModified
-            | MergeConflictKind::AddAdd => {
+            MergeConflictKind::BothModified | MergeConflictKind::AddAdd => {
                 let ours_hash = ours_files.get(path);
                 let theirs_hash = theirs_files.get(path);
 
                 let ours_bytes = if let Some(h) = ours_hash {
-                    let bp = repo_path
-                        .join("objects")
-                        .join("blobs")
-                        .join(h);
+                    let bp = repo_path.join("objects").join("blobs").join(h);
 
                     if bp.exists() {
                         fs::read(&bp)?
@@ -398,10 +370,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
                 };
 
                 let theirs_bytes = if let Some(h) = theirs_hash {
-                    let bp = repo_path
-                        .join("objects")
-                        .join("blobs")
-                        .join(h);
+                    let bp = repo_path.join("objects").join("blobs").join(h);
 
                     if bp.exists() {
                         fs::read(&bp)?
@@ -417,22 +386,16 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
                     println!("CONFLICT (binary): {}", path);
                 } else {
-                    let ours_str =
-                        String::from_utf8_lossy(&ours_bytes);
+                    let ours_str = String::from_utf8_lossy(&ours_bytes);
 
-                    let theirs_str =
-                        String::from_utf8_lossy(&theirs_bytes);
+                    let theirs_str = String::from_utf8_lossy(&theirs_bytes);
 
                     let conflict_content = format!(
                         "<<<<<<< ours\n{}\n=======\n{}\n>>>>>>> theirs\n",
-                        ours_str,
-                        theirs_str
+                        ours_str, theirs_str
                     );
 
-                    fs::write(
-                        &full_path,
-                        conflict_content.as_bytes(),
-                    )?;
+                    fs::write(&full_path, conflict_content.as_bytes())?;
 
                     println!("CONFLICT (content): {}", path);
                 }
@@ -452,10 +415,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
     for conflict in &plan.conflicts {
         if let Some(ours_hash) = ours_files.get(&conflict.path) {
-            index.add(
-                conflict.path.clone(),
-                ours_hash.clone(),
-            );
+            index.add(conflict.path.clone(), ours_hash.clone());
         }
     }
 
@@ -484,9 +444,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
     } else {
         plan.conflicts.sort_by(|a, b| a.path.cmp(&b.path));
 
-        println!(
-            "Automatic merge failed; fix conflicts and then commit."
-        );
+        println!("Automatic merge failed; fix conflicts and then commit.");
 
         println!(
             "{} conflict(s) detected. Resolve them, then run \
@@ -508,13 +466,11 @@ pub fn merge_abort(repo_path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let current_hash = get_head_commit(repo_path)?
-        .context("Cannot abort: HEAD has no commits")?;
+    let current_hash = get_head_commit(repo_path)?.context("Cannot abort: HEAD has no commits")?;
 
     let current_commit = get_commit(repo_path, &current_hash)?;
 
-    let head_files =
-        load_tree_files(repo_path, &current_commit.tree)?;
+    let head_files = load_tree_files(repo_path, &current_commit.tree)?;
 
     restore_working_tree(repo_path, &head_files)?;
 
@@ -583,8 +539,7 @@ fn build_merge_plan(
             }
 
             (b, o, t) => {
-                let kind =
-                    classify_conflict(b, o, t, repo_path, path)?;
+                let kind = classify_conflict(b, o, t, repo_path, path)?;
 
                 conflicts.push(MergeConflict {
                     path: path.clone(),
@@ -605,21 +560,13 @@ fn classify_conflict(
     _path: &str,
 ) -> Result<MergeConflictKind> {
     match (base.is_some(), ours.is_some(), theirs.is_some()) {
-        (_, true, true) if base.is_some() => {
-            Ok(MergeConflictKind::BothModified)
-        }
+        (_, true, true) if base.is_some() => Ok(MergeConflictKind::BothModified),
 
-        (false, true, true) => {
-            Ok(MergeConflictKind::AddAdd)
-        }
+        (false, true, true) => Ok(MergeConflictKind::AddAdd),
 
-        (true, true, false) => {
-            Ok(MergeConflictKind::ModifyDelete)
-        }
+        (true, true, false) => Ok(MergeConflictKind::ModifyDelete),
 
-        (true, false, true) => {
-            Ok(MergeConflictKind::DeleteModify)
-        }
+        (true, false, true) => Ok(MergeConflictKind::DeleteModify),
 
         _ => Ok(MergeConflictKind::BothModified),
     }
@@ -629,10 +576,7 @@ fn classify_conflict(
 // RESTORE WORKING TREE
 // ============================================================================
 
-fn restore_working_tree(
-    repo_path: &Path,
-    files: &BTreeMap<String, String>,
-) -> Result<()> {
+fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> Result<()> {
     let repo_root = repo_path
         .parent()
         .context("Invalid repository path")?
@@ -657,10 +601,7 @@ fn restore_working_tree(
             fs::create_dir_all(parent)?;
         }
 
-        let blob_path = repo_path
-            .join("objects")
-            .join("blobs")
-            .join(blob_hash);
+        let blob_path = repo_path.join("objects").join("blobs").join(blob_hash);
 
         if !blob_path.exists() {
             anyhow::bail!("Missing blob object {}", blob_hash);
@@ -679,10 +620,7 @@ fn restore_working_tree(
 
 fn resolve_target(repo_path: &Path, target: &str) -> Result<String> {
     // Direct commit hash.
-    let commit_path = repo_path
-        .join("objects")
-        .join("commits")
-        .join(target);
+    let commit_path = repo_path.join("objects").join("commits").join(target);
 
     if commit_path.exists() {
         return Ok(target.to_string());
@@ -697,9 +635,7 @@ fn resolve_target(repo_path: &Path, target: &str) -> Result<String> {
             .join(rest);
 
         if remote_ref.exists() {
-            let hash = fs::read_to_string(remote_ref)?
-                .trim()
-                .to_string();
+            let hash = fs::read_to_string(remote_ref)?.trim().to_string();
 
             if !hash.is_empty() {
                 return Ok(hash);
@@ -710,15 +646,10 @@ fn resolve_target(repo_path: &Path, target: &str) -> Result<String> {
     }
 
     // Local branch.
-    let branch_ref = repo_path
-        .join("refs")
-        .join("heads")
-        .join(target);
+    let branch_ref = repo_path.join("refs").join("heads").join(target);
 
     if branch_ref.exists() {
-        let hash = fs::read_to_string(&branch_ref)?
-            .trim()
-            .to_string();
+        let hash = fs::read_to_string(&branch_ref)?.trim().to_string();
 
         if !hash.is_empty() {
             return Ok(hash);
@@ -731,9 +662,7 @@ fn resolve_target(repo_path: &Path, target: &str) -> Result<String> {
     let full_ref = repo_path.join(target);
 
     if full_ref.exists() {
-        let hash = fs::read_to_string(full_ref)?
-            .trim()
-            .to_string();
+        let hash = fs::read_to_string(full_ref)?.trim().to_string();
 
         if !hash.is_empty() {
             return Ok(hash);
@@ -747,11 +676,7 @@ fn resolve_target(repo_path: &Path, target: &str) -> Result<String> {
 // COMMON ANCESTOR
 // ============================================================================
 
-fn find_common_ancestor(
-    repo_path: &Path,
-    ours: &str,
-    theirs: &str,
-) -> Result<Option<String>> {
+fn find_common_ancestor(repo_path: &Path, ours: &str, theirs: &str) -> Result<Option<String>> {
     let ours_ancestors = collect_ancestors(repo_path, ours)?;
     let theirs_ancestors = collect_ancestors(repo_path, theirs)?;
 
@@ -764,10 +689,7 @@ fn find_common_ancestor(
     Ok(None)
 }
 
-fn collect_ancestors(
-    repo_path: &Path,
-    start: &str,
-) -> Result<Vec<String>> {
+fn collect_ancestors(repo_path: &Path, start: &str) -> Result<Vec<String>> {
     let mut result = Vec::new();
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
@@ -795,17 +717,12 @@ fn collect_ancestors(
 // ANCESTOR CHECK
 // ============================================================================
 
-fn is_ancestor(
-    repo_path: &Path,
-    ancestor: &str,
-    descendant: &str,
-) -> Result<bool> {
+fn is_ancestor(repo_path: &Path, ancestor: &str, descendant: &str) -> Result<bool> {
     if ancestor == descendant {
         return Ok(true);
     }
 
-    let ancestors =
-        collect_ancestors(repo_path, descendant)?;
+    let ancestors = collect_ancestors(repo_path, descendant)?;
 
     Ok(ancestors.iter().any(|hash| hash == ancestor))
 }
@@ -814,30 +731,21 @@ fn is_ancestor(
 // CLEAN WORKING TREE CHECK
 // ============================================================================
 
-fn ensure_clean_working_tree(
-    repo_path: &Path,
-    current_hash: &str,
-) -> Result<()> {
+fn ensure_clean_working_tree(repo_path: &Path, current_hash: &str) -> Result<()> {
     let index = Index::load(repo_path)?;
 
-    let current_commit =
-        get_commit(repo_path, current_hash)?;
+    let current_commit = get_commit(repo_path, current_hash)?;
 
-    let head_files =
-        load_tree_files(repo_path, &current_commit.tree)?;
+    let head_files = load_tree_files(repo_path, &current_commit.tree)?;
 
     // Check staged changes.
     if index.entries.len() != head_files.len() {
-        anyhow::bail!(
-            "Cannot merge: you have staged changes. Commit them first."
-        );
+        anyhow::bail!("Cannot merge: you have staged changes. Commit them first.");
     }
 
     for (path, entry) in &index.entries {
         if head_files.get(path) != Some(&entry.blob_hash) {
-            anyhow::bail!(
-                "Cannot merge: you have staged changes. Commit them first."
-            );
+            anyhow::bail!("Cannot merge: you have staged changes. Commit them first.");
         }
     }
 
@@ -859,14 +767,10 @@ fn ensure_clean_working_tree(
         }
 
         if !full_path.is_file() {
-            anyhow::bail!(
-                "Cannot merge: '{}' is not a regular file.",
-                path
-            );
+            anyhow::bail!("Cannot merge: '{}' is not a regular file.", path);
         }
 
-        let actual_hash =
-            objects::hash_file(&full_path)?;
+        let actual_hash = objects::hash_file(&full_path)?;
 
         if &actual_hash != expected_hash {
             anyhow::bail!(
@@ -897,8 +801,7 @@ fn check_untracked_overwrites(
 
     let head_files = match get_head_commit(repo_path)? {
         Some(current_hash) => {
-            let commit =
-                get_commit(repo_path, &current_hash)?;
+            let commit = get_commit(repo_path, &current_hash)?;
 
             load_tree_files(repo_path, &commit.tree)?
         }
@@ -932,10 +835,7 @@ fn check_untracked_overwrites(
 // APPLY TREE
 // ============================================================================
 
-fn apply_tree(
-    repo_path: &Path,
-    target_files: &BTreeMap<String, String>,
-) -> Result<()> {
+fn apply_tree(repo_path: &Path, target_files: &BTreeMap<String, String>) -> Result<()> {
     let repo_root = repo_path
         .parent()
         .context("Invalid repository path")?
@@ -943,8 +843,7 @@ fn apply_tree(
 
     let current_files = match get_head_commit(repo_path)? {
         Some(current_hash) => {
-            let commit =
-                get_commit(repo_path, &current_hash)?;
+            let commit = get_commit(repo_path, &current_hash)?;
 
             load_tree_files(repo_path, &commit.tree)?
         }
@@ -971,16 +870,10 @@ fn apply_tree(
             fs::create_dir_all(parent)?;
         }
 
-        let blob_path = repo_path
-            .join("objects")
-            .join("blobs")
-            .join(blob_hash);
+        let blob_path = repo_path.join("objects").join("blobs").join(blob_hash);
 
         if !blob_path.exists() {
-            anyhow::bail!(
-                "Blob object not found: {}",
-                blob_hash
-            );
+            anyhow::bail!("Blob object not found: {}", blob_hash);
         }
 
         let data = fs::read(&blob_path)?;
@@ -1005,9 +898,7 @@ fn is_binary(data: &[u8]) -> bool {
 // ============================================================================
 
 fn branch_name_from_ref(branch_ref: &str) -> &str {
-    branch_ref
-        .strip_prefix("refs/heads/")
-        .unwrap_or(branch_ref)
+    branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref)
 }
 
 fn short_hash(hash: &str) -> &str {
@@ -1041,38 +932,19 @@ mod tests {
 
         fs::create_dir(repo_path.join("objects")).unwrap();
 
-        fs::create_dir(
-            repo_path.join("objects").join("blobs")
-        )
-        .unwrap();
+        fs::create_dir(repo_path.join("objects").join("blobs")).unwrap();
 
-        fs::create_dir(
-            repo_path.join("objects").join("trees")
-        )
-        .unwrap();
+        fs::create_dir(repo_path.join("objects").join("trees")).unwrap();
 
-        fs::create_dir(
-            repo_path.join("objects").join("commits")
-        )
-        .unwrap();
+        fs::create_dir(repo_path.join("objects").join("commits")).unwrap();
 
         fs::create_dir(repo_path.join("refs")).unwrap();
 
-        fs::create_dir(
-            repo_path.join("refs").join("heads")
-        )
-        .unwrap();
+        fs::create_dir(repo_path.join("refs").join("heads")).unwrap();
 
-        fs::create_dir(
-            repo_path.join("refs").join("remotes")
-        )
-        .unwrap();
+        fs::create_dir(repo_path.join("refs").join("remotes")).unwrap();
 
-        fs::write(
-            repo_path.join("HEAD"),
-            "ref: refs/heads/main\n",
-        )
-        .unwrap();
+        fs::write(repo_path.join("HEAD"), "ref: refs/heads/main\n").unwrap();
 
         fs::write(repo_path.join("index"), "").unwrap();
 
@@ -1101,28 +973,19 @@ mod tests {
             hash_objects(&full, repo_path).unwrap();
         }
 
-        let mut index =
-            Index::load(repo_path).unwrap();
+        let mut index = Index::load(repo_path).unwrap();
 
         for (rel, _) in files {
             let full = dir.path().join(rel);
 
-            let hash =
-                hash_objects(&full, repo_path).unwrap();
+            let hash = hash_objects(&full, repo_path).unwrap();
 
-            index.add(
-                rel.replace('\\', "/"),
-                hash,
-            );
+            index.add(rel.replace('\\', "/"), hash);
         }
 
         index.save(repo_path).unwrap();
 
-        create_commit(
-            repo_path,
-            msg.to_string(),
-        )
-        .unwrap()
+        create_commit(repo_path, msg.to_string()).unwrap()
     }
 
     // ------------------------------------------------------------------
@@ -1141,20 +1004,15 @@ mod tests {
             message: message.to_string(),
         };
 
-        let data =
-            serde_json::to_vec(&c).unwrap();
+        let data = serde_json::to_vec(&c).unwrap();
 
         let mut h = Sha256::new();
 
         h.update(&data);
 
-        let hash =
-            hex::encode(h.finalize());
+        let hash = hex::encode(h.finalize());
 
-        let path = repo_path
-            .join("objects")
-            .join("commits")
-            .join(&hash);
+        let path = repo_path.join("objects").join("commits").join(&hash);
 
         fs::write(&path, &data).unwrap();
 
@@ -1179,17 +1037,11 @@ mod tests {
 
         state.save(&repo_path).unwrap();
 
-        let loaded =
-            MergeState::load(&repo_path)
-                .unwrap()
-                .unwrap();
+        let loaded = MergeState::load(&repo_path).unwrap().unwrap();
 
         assert_eq!(loaded.merge_head, "abc123");
         assert_eq!(loaded.conflicts.len(), 1);
-        assert_eq!(
-            loaded.conflicts[0].path,
-            "file.txt"
-        );
+        assert_eq!(loaded.conflicts[0].path, "file.txt");
     }
 
     #[test]
@@ -1211,10 +1063,7 @@ mod tests {
         state.resolve_path("a.txt");
 
         assert_eq!(state.conflicts.len(), 1);
-        assert_eq!(
-            state.conflicts[0].path,
-            "b.txt"
-        );
+        assert_eq!(state.conflicts[0].path, "b.txt");
     }
 
     #[test]
@@ -1223,39 +1072,23 @@ mod tests {
 
         assert!(!is_merge_in_progress(&repo_path));
 
-        fs::write(
-            repo_path.join("MERGE_HEAD"),
-            "abcdef",
-        )
-        .unwrap();
+        fs::write(repo_path.join("MERGE_HEAD"), "abcdef").unwrap();
 
         assert!(is_merge_in_progress(&repo_path));
     }
 
     #[test]
     fn test_short_hash() {
-        assert_eq!(
-            short_hash("1234567890abcdef"),
-            "12345678"
-        );
+        assert_eq!(short_hash("1234567890abcdef"), "12345678");
 
-        assert_eq!(
-            short_hash("1234"),
-            "1234"
-        );
+        assert_eq!(short_hash("1234"), "1234");
     }
 
     #[test]
     fn test_branch_name_from_ref() {
-        assert_eq!(
-            branch_name_from_ref("refs/heads/main"),
-            "main"
-        );
+        assert_eq!(branch_name_from_ref("refs/heads/main"), "main");
 
-        assert_eq!(
-            branch_name_from_ref("main"),
-            "main"
-        );
+        assert_eq!(branch_name_from_ref("main"), "main");
     }
 
     // ------------------------------------------------------------------
@@ -1277,10 +1110,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            result,
-            MergeConflictKind::BothModified
-        );
+        assert_eq!(result, MergeConflictKind::BothModified);
     }
 
     #[test]
@@ -1298,10 +1128,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            result,
-            MergeConflictKind::ModifyDelete
-        );
+        assert_eq!(result, MergeConflictKind::ModifyDelete);
     }
 
     #[test]
@@ -1319,10 +1146,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            result,
-            MergeConflictKind::DeleteModify
-        );
+        assert_eq!(result, MergeConflictKind::DeleteModify);
     }
 
     #[test]
@@ -1340,10 +1164,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            result,
-            MergeConflictKind::AddAdd
-        );
+        assert_eq!(result, MergeConflictKind::AddAdd);
     }
 
     // ------------------------------------------------------------------
@@ -1356,33 +1177,15 @@ mod tests {
         let mut ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        ours.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        ours.insert("file.txt".to_string(), "base".to_string());
 
-        theirs.insert(
-            "file.txt".to_string(),
-            "theirs".to_string(),
-        );
+        theirs.insert("file.txt".to_string(), "theirs".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
-        assert_eq!(
-            plan.files.get("file.txt"),
-            Some(&"theirs".to_string())
-        );
+        assert_eq!(plan.files.get("file.txt"), Some(&"theirs".to_string()));
 
         assert!(plan.conflicts.is_empty());
     }
@@ -1393,33 +1196,15 @@ mod tests {
         let mut ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        ours.insert(
-            "file.txt".to_string(),
-            "ours".to_string(),
-        );
+        ours.insert("file.txt".to_string(), "ours".to_string());
 
-        theirs.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        theirs.insert("file.txt".to_string(), "base".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
-        assert_eq!(
-            plan.files.get("file.txt"),
-            Some(&"ours".to_string())
-        );
+        assert_eq!(plan.files.get("file.txt"), Some(&"ours".to_string()));
 
         assert!(plan.conflicts.is_empty());
     }
@@ -1430,35 +1215,17 @@ mod tests {
         let mut ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        ours.insert(
-            "file.txt".to_string(),
-            "ours".to_string(),
-        );
+        ours.insert("file.txt".to_string(), "ours".to_string());
 
-        theirs.insert(
-            "file.txt".to_string(),
-            "theirs".to_string(),
-        );
+        theirs.insert("file.txt".to_string(), "theirs".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
         assert!(plan.files.is_empty());
         assert_eq!(plan.conflicts.len(), 1);
-        assert_eq!(
-            plan.conflicts[0].kind,
-            MergeConflictKind::BothModified
-        );
+        assert_eq!(plan.conflicts[0].kind, MergeConflictKind::BothModified);
     }
 
     #[test]
@@ -1467,33 +1234,15 @@ mod tests {
         let mut ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        ours.insert(
-            "file.txt".to_string(),
-            "same".to_string(),
-        );
+        ours.insert("file.txt".to_string(), "same".to_string());
 
-        theirs.insert(
-            "file.txt".to_string(),
-            "same".to_string(),
-        );
+        theirs.insert("file.txt".to_string(), "same".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
-        assert_eq!(
-            plan.files.get("file.txt"),
-            Some(&"same".to_string())
-        );
+        assert_eq!(plan.files.get("file.txt"), Some(&"same".to_string()));
 
         assert!(plan.conflicts.is_empty());
     }
@@ -1504,29 +1253,14 @@ mod tests {
         let mut ours = BTreeMap::new();
         let theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        ours.insert(
-            "file.txt".to_string(),
-            "ours".to_string(),
-        );
+        ours.insert("file.txt".to_string(), "ours".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
         assert_eq!(plan.conflicts.len(), 1);
-        assert_eq!(
-            plan.conflicts[0].kind,
-            MergeConflictKind::ModifyDelete
-        );
+        assert_eq!(plan.conflicts[0].kind, MergeConflictKind::ModifyDelete);
     }
 
     #[test]
@@ -1535,29 +1269,14 @@ mod tests {
         let ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        base.insert(
-            "file.txt".to_string(),
-            "base".to_string(),
-        );
+        base.insert("file.txt".to_string(), "base".to_string());
 
-        theirs.insert(
-            "file.txt".to_string(),
-            "theirs".to_string(),
-        );
+        theirs.insert("file.txt".to_string(), "theirs".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
         assert_eq!(plan.conflicts.len(), 1);
-        assert_eq!(
-            plan.conflicts[0].kind,
-            MergeConflictKind::DeleteModify
-        );
+        assert_eq!(plan.conflicts[0].kind, MergeConflictKind::DeleteModify);
     }
 
     #[test]
@@ -1566,29 +1285,14 @@ mod tests {
         let mut ours = BTreeMap::new();
         let mut theirs = BTreeMap::new();
 
-        ours.insert(
-            "new.txt".to_string(),
-            "ours".to_string(),
-        );
+        ours.insert("new.txt".to_string(), "ours".to_string());
 
-        theirs.insert(
-            "new.txt".to_string(),
-            "theirs".to_string(),
-        );
+        theirs.insert("new.txt".to_string(), "theirs".to_string());
 
-        let plan = build_merge_plan(
-            Path::new(".rusty"),
-            &base,
-            &ours,
-            &theirs,
-        )
-        .unwrap();
+        let plan = build_merge_plan(Path::new(".rusty"), &base, &ours, &theirs).unwrap();
 
         assert_eq!(plan.conflicts.len(), 1);
-        assert_eq!(
-            plan.conflicts[0].kind,
-            MergeConflictKind::AddAdd
-        );
+        assert_eq!(plan.conflicts[0].kind, MergeConflictKind::AddAdd);
     }
 
     // ------------------------------------------------------------------
@@ -1599,9 +1303,7 @@ mod tests {
     fn test_binary_detection() {
         assert!(!is_binary(b"hello world"));
 
-        assert!(is_binary(&[
-            0x01, 0x02, 0x00, 0x04
-        ]));
+        assert!(is_binary(&[0x01, 0x02, 0x00, 0x04]));
     }
 
     // ------------------------------------------------------------------
@@ -1612,11 +1314,7 @@ mod tests {
     fn test_collect_ancestors_empty_repo_fails() {
         let (_dir, repo_path) = setup_repo();
 
-        let result =
-            collect_ancestors(
-                &repo_path,
-                "does-not-exist",
-            );
+        let result = collect_ancestors(&repo_path, "does-not-exist");
 
         assert!(result.is_err());
     }
@@ -1629,21 +1327,12 @@ mod tests {
     fn test_read_merge_head() {
         let (_dir, repo_path) = setup_repo();
 
-        assert_eq!(
-            read_merge_head(&repo_path)
-                .unwrap(),
-            None
-        );
+        assert_eq!(read_merge_head(&repo_path).unwrap(), None);
 
-        fs::write(
-            repo_path.join("MERGE_HEAD"),
-            "abcdef123456\n",
-        )
-        .unwrap();
+        fs::write(repo_path.join("MERGE_HEAD"), "abcdef123456\n").unwrap();
 
         assert_eq!(
-            read_merge_head(&repo_path)
-                .unwrap(),
+            read_merge_head(&repo_path).unwrap(),
             Some("abcdef123456".to_string())
         );
     }
@@ -1663,14 +1352,10 @@ mod tests {
 
         state.save(&repo_path).unwrap();
 
-        assert!(
-            repo_path.join("MERGE_STATE").exists()
-        );
+        assert!(repo_path.join("MERGE_STATE").exists());
 
         MergeState::remove(&repo_path).unwrap();
 
-        assert!(
-            !repo_path.join("MERGE_STATE").exists()
-        );
+        assert!(!repo_path.join("MERGE_STATE").exists());
     }
 }
