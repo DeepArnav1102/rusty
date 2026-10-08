@@ -1,5 +1,3 @@
-<div align="center">
-
 # Rusty VCS
 
 **A distributed Version Control System built in Rust, featuring a full CLI and an interactive Ratatui Terminal UI.**
@@ -226,7 +224,7 @@ rusty logout
 # Add a remote repository
 rusty remote add origin http://localhost:3000/repos/<owner>/<repo-name>
 
-# Clone a remote repository into a directory and checkout default branch
+# Clone a remote repository into a target directory
 rusty clone http://localhost:3000/repos/<owner>/<repo-name> [directory]
 
 # Fetch remote objects and tracking references
