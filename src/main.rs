@@ -3,6 +3,7 @@ mod auth;
 mod branch;
 mod checkout;
 mod cli;
+mod clone;
 mod commit;
 mod fetch;
 mod ignore;
@@ -112,6 +113,10 @@ fn main() -> Result<()> {
             let repo_path = find_repo_path()?;
 
             fetch::fetch(&repo_path)?;
+        }
+
+        Commands::Clone { url, directory } => {
+            clone::clone(&url, directory)?;
         }
 
         Commands::Login { server } => {

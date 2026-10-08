@@ -28,6 +28,10 @@ pub enum Commands {
     Log,
     Push,
     Fetch,
+    Clone {
+        url: String,
+        directory: Option<String>,
+    },
     Checkout {
         branch: String,
     },
