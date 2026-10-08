@@ -13,14 +13,6 @@
 
 ---
 
-</div>
-
-<div align="center">
-  <img src="./screen04.jpg" alt="Rusty Interactive TUI Dashboard" width="850" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);" />
-</div>
-
----
-
 ## Overview
 
 **Rusty** is a lightweight, distributed Version Control System designed from scratch in pure Rust. It provides full control over content addressing, staging indexes, recursive tree graphs, branch lineages, ancestor-based 3-way conflict merging, and secure HTTP remote synchronization with remote Git/VCS backends.
@@ -56,7 +48,7 @@ Whether you prefer the precision of a UNIX CLI or the visual workflow of a keybo
 - **REST Protocol Client:** Connects to any compatible Git Version Control server.
 - **Object Deduplication:** Proactively checks `object_exists` before pushing blobs/trees to minimize network transfer.
 - **Remote Tracking Branches:** Stores server state locally in `.rusty/refs/remotes/<remote>/<branch>`.
-- **Fetch & Pull Engine:** Downloads remote commit DAGs and fast-forwards/merges local tracking branches.
+- **Fetch, Pull & Clone Engine:** Downloads remote commit DAGs, clones remote repositories with automatic default branch detection (`main`/`master`), and fast-forwards/merges local tracking branches.
 - **PAT & Bearer Authentication:** Secure credential caching in `~/.rusty/credentials.json`.
 
 ### Interactive Terminal UI (TUI)
@@ -111,8 +103,8 @@ flowchart TD
     API --> SRV_OBJ
     API --> SRV_REF
 
-    SRV_OBJ -- "rusty fetch / pull" --> ObjectDatabase
-    SRV_REF -- "rusty fetch / pull" --> REMOTES
+    SRV_OBJ -- "rusty fetch / pull / clone" --> ObjectDatabase
+    SRV_REF -- "rusty fetch / pull / clone" --> REMOTES
 ```
 
 ### `.rusty` Repository Directory Structure
@@ -233,6 +225,9 @@ rusty logout
 
 # Add a remote repository
 rusty remote add origin http://localhost:3000/repos/<owner>/<repo-name>
+
+# Clone a remote repository into a directory and checkout default branch
+rusty clone http://localhost:3000/repos/<owner>/<repo-name> [directory]
 
 # Fetch remote objects and tracking references
 rusty fetch
