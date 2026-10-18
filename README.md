@@ -209,6 +209,28 @@ rusty merge <branch-name>
 rusty merge --abort
 ```
 
+### 4. Integrity & Database Diagnostics (`fsck`)
+
+```bash
+# Verify integrity of all objects, connectivity, and references
+rusty fsck
+
+# Discover unreachable or orphaned objects
+rusty fsck --unreachable
+
+# Check graph connectivity without hashing blob bodies (fastest)
+rusty fsck --connectivity-only
+
+# Strict mode: check tree entry names, sha256 formatting, and messages
+rusty fsck --strict
+
+# Automatically recover dangling objects into .rusty/lost-found/
+rusty fsck --lost-found
+
+# Structured JSON diagnostic report for scripts and CI/CD pipelines
+rusty fsck --json
+```
+
 ### 4. Authentication & Remote Management
 
 ```bash

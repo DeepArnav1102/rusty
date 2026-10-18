@@ -6,6 +6,7 @@ mod cli;
 mod clone;
 mod commit;
 mod fetch;
+mod fsck;
 mod ignore;
 mod index;
 mod log;
@@ -201,6 +202,29 @@ fn main() -> Result<()> {
             let repo_path = find_repo_path()?;
 
             pull::pull(&repo_path)?;
+        }
+        Commands::Fsck {
+            dangling,
+            unreachable,
+            connectivity_only,
+            strict,
+            lost_found,
+            json,
+        } => {
+            let repo_path = find_repo_path()?;
+            let options = fsck::FsckOptions {
+                dangling,
+                unreachable,
+                connectivity_only,
+                strict,
+                lost_found,
+                json,
+            };
+            let report = fsck::run_fsck(&repo_path, &options)?;
+            fsck::print_fsck_report(&report, &options);
+            if !report.is_clean {
+                std::process::exit(1);
+            }
         }
     }
 

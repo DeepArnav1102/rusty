@@ -200,6 +200,7 @@ pub fn update_ref(
 // GET SINGLE REMOTE REF
 // ============================================================
 
+#[allow(dead_code)]
 pub fn get_ref(origin: &str, branch: &str, creds: &Credentials) -> Result<String> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))

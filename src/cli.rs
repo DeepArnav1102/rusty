@@ -52,10 +52,8 @@ pub enum Commands {
         command: RemoteCommands,
     },
     Merge {
-        /// Branch to merge, or omit with --abort to cancel an in-progress merge.
         branch: Option<String>,
 
-        /// Abort the current in-progress merge.
         #[arg(long)]
         abort: bool,
     },
@@ -69,6 +67,31 @@ pub enum Commands {
         all: bool,
     },
     Pull,
+    Fsck {
+        /// Show objects that exist but are never directly referenced
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        dangling: bool,
+
+        /// Print out objects that exist but are unreachable from any reference
+        #[arg(long)]
+        unreachable: bool,
+
+        /// Check connectivity of reachable objects without hashing blob payloads
+        #[arg(long)]
+        connectivity_only: bool,
+
+        /// Enable strict validation (check tree entry names, hash syntax, commit messages)
+        #[arg(long)]
+        strict: bool,
+
+        /// Write dangling objects into .rusty/lost-found/
+        #[arg(long)]
+        lost_found: bool,
+
+        /// Output diagnostic report in JSON format for automated tooling
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

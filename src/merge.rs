@@ -1,11 +1,10 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 
-use crate::commit::{Commit, get_commit};
+use crate::commit::get_commit;
 use crate::index::Index;
 use crate::objects;
 use crate::repository::get_head_commit;
@@ -955,6 +954,7 @@ mod tests {
     // Helper: write a file + stage + commit.
     // ------------------------------------------------------------------
 
+    #[allow(dead_code)]
     fn write_and_commit(
         dir: &TempDir,
         repo_path: &std::path::PathBuf,
@@ -992,6 +992,7 @@ mod tests {
     // Helper: write a raw commit object.
     // ------------------------------------------------------------------
 
+    #[allow(dead_code)]
     fn raw_commit(
         repo_path: &std::path::PathBuf,
         tree: &str,
