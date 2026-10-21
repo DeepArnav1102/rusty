@@ -311,3 +311,273 @@ pub fn get_object(origin: &str, hash: &str, creds: &Credentials) -> Result<serde
 
     Ok(data)
 }
+
+// ============================================================
+// BATCH OBJECTS: CHECK EXISTENCE
+// ============================================================
+
+#[derive(serde::Deserialize)]
+pub struct BatchCheckResult {
+    pub existing: Vec<String>,
+    pub missing: Vec<String>,
+}
+
+pub fn check_objects_batch(
+    origin: &str,
+    hashes: &[String],
+    creds: &Credentials,
+) -> Result<BatchCheckResult> {
+    if hashes.is_empty() {
+        return Ok(BatchCheckResult {
+            existing: Vec::new(),
+            missing: Vec::new(),
+        });
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let url = format!("{}/objects/batch-check", origin.trim_end_matches('/'));
+
+    let body = json!({
+        "hashes": hashes
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .header("X-Rusty-Email", &creds.email)
+        .header("X-Rusty-Token", &creds.token)
+        .json(&body)
+        .send();
+
+    let response = match response {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback for older servers without batch-check:
+            // Query one-by-one
+            let mut existing = Vec::new();
+            let mut missing = Vec::new();
+            for h in hashes {
+                if object_exists(origin, h, creds).unwrap_or(false) {
+                    existing.push(h.clone());
+                } else {
+                    missing.push(h.clone());
+                }
+            }
+            return Ok(BatchCheckResult { existing, missing });
+        }
+    };
+
+    if !response.status().is_success() {
+        // Fallback gracefully to individual checks
+        let mut existing = Vec::new();
+        let mut missing = Vec::new();
+        for h in hashes {
+            if object_exists(origin, h, creds).unwrap_or(false) {
+                existing.push(h.clone());
+            } else {
+                missing.push(h.clone());
+            }
+        }
+        return Ok(BatchCheckResult { existing, missing });
+    }
+
+    let result: serde_json::Value = response.json()?;
+    let existing = result["existing"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let missing = result["missing"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(BatchCheckResult { existing, missing })
+}
+
+// ============================================================
+// BATCH OBJECTS: SEND / STORE OBJECTS
+// ============================================================
+
+pub struct BatchObjectPayload {
+    pub object_type: String,
+    pub hash: String,
+    pub data: String,
+}
+
+pub fn send_objects_batch(
+    origin: &str,
+    objects: &[BatchObjectPayload],
+    creds: &Credentials,
+) -> Result<()> {
+    if objects.is_empty() {
+        return Ok(());
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let url = format!("{}/objects/batch-store", origin.trim_end_matches('/'));
+
+    let json_objects: Vec<serde_json::Value> = objects
+        .iter()
+        .map(|obj| {
+            json!({
+                "type": obj.object_type,
+                "hash": obj.hash,
+                "data": obj.data,
+            })
+        })
+        .collect();
+
+    let body = json!({
+        "objects": json_objects
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .header("X-Rusty-Email", &creds.email)
+        .header("X-Rusty-Token", &creds.token)
+        .json(&body)
+        .send();
+
+    let response = match response {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback: send one by one
+            for obj in objects {
+                send_object(origin, &obj.object_type, &obj.hash, obj.data.as_bytes(), creds)?;
+            }
+            return Ok(());
+        }
+    };
+
+    if !response.status().is_success() {
+        // Fallback to one-by-one upload
+        for obj in objects {
+            send_object(origin, &obj.object_type, &obj.hash, obj.data.as_bytes(), creds)?;
+        }
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+// ============================================================
+// BATCH OBJECTS: GET / DOWNLOAD OBJECTS
+// ============================================================
+
+#[derive(serde::Deserialize)]
+pub struct FetchedObject {
+    pub hash: String,
+    #[serde(rename = "type")]
+    #[allow(dead_code)]
+    pub object_type: String,
+    pub data: String,
+}
+
+pub fn get_objects_batch(
+    origin: &str,
+    hashes: &[String],
+    creds: &Credentials,
+) -> Result<Vec<FetchedObject>> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()?;
+
+    let url = format!("{}/objects/batch-get", origin.trim_end_matches('/'));
+
+    let body = json!({
+        "hashes": hashes
+    });
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", creds.token))
+        .header("X-Rusty-Email", &creds.email)
+        .header("X-Rusty-Token", &creds.token)
+        .json(&body)
+        .send();
+
+    let response = match response {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback: fetch one by one
+            let mut list = Vec::new();
+            for h in hashes {
+                if let Ok(obj_val) = get_object(origin, h, creds) {
+                    if let (Some(hash), Some(obj_type), Some(data)) = (
+                        obj_val["hash"].as_str(),
+                        obj_val["type"].as_str(),
+                        obj_val["data"].as_str(),
+                    ) {
+                        list.push(FetchedObject {
+                            hash: hash.to_string(),
+                            object_type: obj_type.to_string(),
+                            data: data.to_string(),
+                        });
+                    }
+                }
+            }
+            return Ok(list);
+        }
+    };
+
+    if !response.status().is_success() {
+        // Fallback to one-by-one
+        let mut list = Vec::new();
+        for h in hashes {
+            if let Ok(obj_val) = get_object(origin, h, creds) {
+                if let (Some(hash), Some(obj_type), Some(data)) = (
+                    obj_val["hash"].as_str(),
+                    obj_val["type"].as_str(),
+                    obj_val["data"].as_str(),
+                ) {
+                    list.push(FetchedObject {
+                        hash: hash.to_string(),
+                        object_type: obj_type.to_string(),
+                        data: data.to_string(),
+                    });
+                }
+            }
+        }
+        return Ok(list);
+    }
+
+    let result: serde_json::Value = response.json()?;
+    let mut list = Vec::new();
+
+    if let Some(arr) = result["objects"].as_array() {
+        for item in arr {
+            if let (Some(hash), Some(obj_type), Some(data)) = (
+                item["hash"].as_str(),
+                item["type"].as_str(),
+                item["data"].as_str(),
+            ) {
+                list.push(FetchedObject {
+                    hash: hash.to_string(),
+                    object_type: obj_type.to_string(),
+                    data: data.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(list)
+}

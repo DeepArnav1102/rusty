@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use crate::auth::{self, Credentials};
+use crate::auth;
 use crate::commit::Commit;
 use crate::remote;
 use crate::tree::Tree;
@@ -36,19 +36,64 @@ pub fn push(repo_path: &Path) -> Result<()> {
         anyhow::bail!("No commits to push");
     }
 
-    let mut sent = HashSet::new();
+    println!("Scanning and packaging objects for {}...", origin);
 
-    println!("Pushing objects to {}...", origin);
+    // 1. Gather all local objects reachable from the target commit
+    let mut reachable = Vec::new();
+    let mut visited = HashSet::new();
+    collect_reachable_objects(repo_path, "commit", commit_hash, &mut visited, &mut reachable)?;
 
-    send_object(repo_path, &origin, "commit", commit_hash, &mut sent, &creds)?;
+    println!("Total local objects in lineage: {}", reachable.len());
 
-    // Update remote branch ref
+    // 2. N+1 Elimination: Batch query remote for missing objects
+    let all_hashes: Vec<String> = reachable.iter().map(|(h, _, _)| h.clone()).collect();
+    let batch_check = remote::check_objects_batch(&origin, &all_hashes, &creds)?;
+
+    let missing_hashes: HashSet<String> = batch_check.missing.into_iter().collect();
+
+    println!(
+        "Remote status: {} already present, {} to upload",
+        batch_check.existing.len(),
+        missing_hashes.len()
+    );
+
+    // 3. Batch upload only missing objects (chunked into batches of 100)
+    let missing_objects: Vec<&(String, &'static str, std::path::PathBuf)> = reachable
+        .iter()
+        .filter(|(h, _, _)| missing_hashes.contains(h))
+        .collect();
+
+    let chunk_size = 100;
+    for (chunk_idx, chunk) in missing_objects.chunks(chunk_size).enumerate() {
+        let mut payloads = Vec::new();
+        for (hash, obj_type, path) in chunk {
+            let data_bytes = fs::read(path)
+                .with_context(|| format!("Cannot read {} {}", obj_type, hash))?;
+            let data_str = String::from_utf8_lossy(&data_bytes).to_string();
+            payloads.push(remote::BatchObjectPayload {
+                object_type: obj_type.to_string(),
+                hash: hash.clone(),
+                data: data_str,
+            });
+        }
+
+        remote::send_objects_batch(&origin, &payloads, &creds)?;
+        let uploaded_so_far = (chunk_idx + 1) * chunk_size;
+        let total_missing = missing_objects.len();
+        println!(
+            "  + batch uploaded {}/{} objects",
+            uploaded_so_far.min(total_missing),
+            total_missing
+        );
+    }
+
+    // 4. Update remote branch ref
     remote::update_ref(&origin, branch, commit_hash, &creds)?;
 
     let clean_branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
 
     println!(
-        "\n✓ Pushed commit {} to branch '{}'",
+        "\n✓ Successfully pushed commit {} to branch '{}'",
         &commit_hash[..8.min(commit_hash.len())],
         clean_branch
     );
@@ -59,19 +104,17 @@ pub fn push(repo_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn send_object(
+fn collect_reachable_objects(
     repo_path: &Path,
-    origin: &str,
-    object_type: &str,
+    object_type: &'static str,
     hash: &str,
-    sent: &mut HashSet<String>,
-    creds: &Credentials,
+    visited: &mut HashSet<String>,
+    collected: &mut Vec<(String, &'static str, std::path::PathBuf)>,
 ) -> Result<()> {
-    if sent.contains(hash) {
+    if visited.contains(hash) {
         return Ok(());
     }
-
-    sent.insert(hash.to_string());
+    visited.insert(hash.to_string());
 
     let object_dir = match object_type {
         "blob" => "blobs",
@@ -81,57 +124,39 @@ fn send_object(
     };
 
     let object_path = repo_path.join("objects").join(object_dir).join(hash);
-
-    let data =
-        fs::read(&object_path).with_context(|| format!("Cannot read {} {}", object_type, hash))?;
-
-    if remote::object_exists(origin, hash, creds)? {
-        println!(
-            "  ✓ {} {} (already exists on remote)",
-            object_type,
-            &hash[..8.min(hash.len())]
-        );
-    } else {
-        remote::send_object(origin, object_type, hash, &data, creds)?;
-
-        println!(
-            "  + uploaded {} {}",
-            object_type,
-            &hash[..8.min(hash.len())]
-        );
+    if !object_path.exists() {
+        return Ok(());
     }
+
+    collected.push((hash.to_string(), object_type, object_path.clone()));
+
+    let data = fs::read(&object_path)?;
 
     match object_type {
         "commit" => {
             let commit: Commit = serde_json::from_slice(&data)?;
-
-            // Send the tree referenced by this commit.
-            send_object(repo_path, origin, "tree", &commit.tree, sent, creds)?;
-
-            // Send ALL parents.
-            // This is required for merge commits.
+            collect_reachable_objects(repo_path, "tree", &commit.tree, visited, collected)?;
             for parent in &commit.parents {
-                send_object(repo_path, origin, "commit", parent, sent, creds)?;
+                collect_reachable_objects(repo_path, "commit", parent, visited, collected)?;
             }
         }
-
         "tree" => {
             let tree: Tree = serde_json::from_slice(&data)?;
-
             for entry in tree.entries {
-                send_object(
+                let entry_type = if entry.object_type == "blob" {
+                    "blob"
+                } else {
+                    "tree"
+                };
+                collect_reachable_objects(
                     repo_path,
-                    origin,
-                    &entry.object_type,
+                    entry_type,
                     &entry.object_hash,
-                    sent,
-                    creds,
+                    visited,
+                    collected,
                 )?;
             }
         }
-
-        "blob" => {}
-
         _ => {}
     }
 

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -36,7 +36,7 @@ pub fn fetch(repo_path: &Path) -> Result<()> {
     }
 
     // ------------------------------------------------------------
-    // 3. Download objects for every remote branch
+    // 3. Download objects for every remote branch using batching
     // ------------------------------------------------------------
 
     let mut fetched = HashSet::new();
@@ -44,10 +44,9 @@ pub fn fetch(repo_path: &Path) -> Result<()> {
     for (branch, commit_hash) in &remote_refs {
         println!("\nFetching origin/{}...", branch);
 
-        fetch_object(
+        fetch_branch_objects_batch(
             repo_path,
             &origin,
-            "commit",
             commit_hash,
             &mut fetched,
             &creds,
@@ -160,118 +159,131 @@ fn remove_empty_dirs(path: &Path) -> Result<()> {
 }
 
 // ============================================================
-// FETCH ONE OBJECT AND ITS ENTIRE HISTORY
+// BATCH OBJECT FETCH ENGINE (N+1 Elimination)
 // ============================================================
 
-fn fetch_object(
+fn fetch_branch_objects_batch(
     repo_path: &Path,
     origin: &str,
-    object_type: &str,
-    hash: &str,
+    tip_commit: &str,
     fetched: &mut HashSet<String>,
     creds: &Credentials,
 ) -> Result<()> {
-    if fetched.contains(hash) {
-        return Ok(());
-    }
+    let mut pending_commits = vec![tip_commit.to_string()];
+    let mut pending_trees = Vec::new();
+    let mut pending_blobs = Vec::new();
 
-    fetched.insert(hash.to_string());
+    // Loop until all levels of commits and trees are resolved
+    while !pending_commits.is_empty() || !pending_trees.is_empty() || !pending_blobs.is_empty() {
+        // 1. Process Commits
+        if !pending_commits.is_empty() {
+            let to_fetch: Vec<String> = pending_commits
+                .drain(..)
+                .filter(|h| !fetched.contains(h) && !object_exists_locally(repo_path, "commits", h))
+                .collect();
 
-    let object_dir = match object_type {
-        "blob" => "blobs",
-        "tree" => "trees",
-        "commit" => "commits",
-        _ => anyhow::bail!("Unknown object type: {}", object_type),
-    };
+            if !to_fetch.is_empty() {
+                let fetched_objs = remote::get_objects_batch(origin, &to_fetch, creds)?;
+                for obj in fetched_objs {
+                    save_object_locally(repo_path, "commits", &obj.hash, &obj.data)?;
+                    fetched.insert(obj.hash.clone());
+                    println!("  + downloaded commit {}", short_hash(&obj.hash));
+                }
+            }
 
-    let object_path = repo_path.join("objects").join(object_dir).join(hash);
+            // Inspect all newly available commits to discover trees and parents
+            let commits_to_inspect: Vec<String> = fetched
+                .iter()
+                .filter(|h| object_exists_locally(repo_path, "commits", h))
+                .cloned()
+                .collect();
 
-    // ------------------------------------------------------------
-    // Download object if it doesn't already exist
-    // ------------------------------------------------------------
-
-    if object_path.exists() {
-        println!("  ✓ {} {} already exists", object_type, short_hash(hash));
-    } else {
-        let object = remote::get_object(origin, hash, creds)?;
-
-        let remote_type = object["type"]
-            .as_str()
-            .context("Remote object missing type")?;
-
-        let data = object["data"]
-            .as_str()
-            .context("Remote object missing data")?;
-
-        if remote_type != object_type {
-            anyhow::bail!(
-                "Object type mismatch for {}: expected {}, got {}",
-                hash,
-                object_type,
-                remote_type
-            );
-        }
-
-        if let Some(parent) = object_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        fs::write(&object_path, data.as_bytes())?;
-
-        println!("  + downloaded {} {}", object_type, short_hash(hash));
-    }
-
-    // ------------------------------------------------------------
-    // Recursively fetch referenced objects
-    // ------------------------------------------------------------
-
-    match object_type {
-        "commit" => {
-            // IMPORTANT:
-            // Use get_commit() instead of directly deserializing
-            // Commit. get_commit() understands both:
-            //
-            // Old:
-            //     "parent": "abc..."
-            //
-            // New:
-            //     "parents": ["abc...", "..."]
-            //
-            // This ensures old commit histories are fetched too.
-
-            let commit = crate::commit::get_commit(repo_path, hash)?;
-
-            // Fetch commit tree
-            fetch_object(repo_path, origin, "tree", &commit.tree, fetched, creds)?;
-
-            // Fetch ALL parents
-            for parent in &commit.parents {
-                fetch_object(repo_path, origin, "commit", parent, fetched, creds)?;
+            for c_hash in commits_to_inspect {
+                if let Ok(commit) = crate::commit::get_commit(repo_path, &c_hash) {
+                    if !fetched.contains(&commit.tree)
+                        && !object_exists_locally(repo_path, "trees", &commit.tree)
+                    {
+                        pending_trees.push(commit.tree);
+                    }
+                    for parent in commit.parents {
+                        if !fetched.contains(&parent)
+                            && !object_exists_locally(repo_path, "commits", &parent)
+                        {
+                            pending_commits.push(parent);
+                        }
+                    }
+                }
             }
         }
 
-        "tree" => {
-            let data = fs::read(&object_path)?;
+        // 2. Process Trees
+        if !pending_trees.is_empty() {
+            let to_fetch: Vec<String> = pending_trees
+                .drain(..)
+                .filter(|h| !fetched.contains(h) && !object_exists_locally(repo_path, "trees", h))
+                .collect();
 
-            let tree: crate::tree::Tree = serde_json::from_slice(&data)?;
+            if !to_fetch.is_empty() {
+                let fetched_objs = remote::get_objects_batch(origin, &to_fetch, creds)?;
+                for obj in fetched_objs {
+                    save_object_locally(repo_path, "trees", &obj.hash, &obj.data)?;
+                    fetched.insert(obj.hash.clone());
+                    println!("  + downloaded tree {}", short_hash(&obj.hash));
 
-            for entry in tree.entries {
-                fetch_object(
-                    repo_path,
-                    origin,
-                    &entry.object_type,
-                    &entry.object_hash,
-                    fetched,
-                    creds,
-                )?;
+                    // Inspect tree for child trees and blobs
+                    if let Ok(tree) = serde_json::from_str::<crate::tree::Tree>(&obj.data) {
+                        for entry in tree.entries {
+                            if entry.object_type == "tree" {
+                                if !fetched.contains(&entry.object_hash)
+                                    && !object_exists_locally(repo_path, "trees", &entry.object_hash)
+                                {
+                                    pending_trees.push(entry.object_hash);
+                                }
+                            } else if entry.object_type == "blob" {
+                                if !fetched.contains(&entry.object_hash)
+                                    && !object_exists_locally(repo_path, "blobs", &entry.object_hash)
+                                {
+                                    pending_blobs.push(entry.object_hash);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        "blob" => {}
+        // 3. Process Blobs in Batches
+        if !pending_blobs.is_empty() {
+            let to_fetch: Vec<String> = pending_blobs
+                .drain(..)
+                .filter(|h| !fetched.contains(h) && !object_exists_locally(repo_path, "blobs", h))
+                .collect();
 
-        _ => {}
+            // Chunk blob fetches into batches of 100
+            for chunk in to_fetch.chunks(100) {
+                let fetched_objs = remote::get_objects_batch(origin, chunk, creds)?;
+                for obj in fetched_objs {
+                    save_object_locally(repo_path, "blobs", &obj.hash, &obj.data)?;
+                    fetched.insert(obj.hash.clone());
+                }
+                println!("  + batch downloaded {} blobs", chunk.len());
+            }
+        }
     }
 
+    Ok(())
+}
+
+fn object_exists_locally(repo_path: &Path, dir: &str, hash: &str) -> bool {
+    repo_path.join("objects").join(dir).join(hash).exists()
+}
+
+fn save_object_locally(repo_path: &Path, dir: &str, hash: &str, data: &str) -> Result<()> {
+    let dest = repo_path.join("objects").join(dir).join(hash);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(dest, data.as_bytes())?;
     Ok(())
 }
 
