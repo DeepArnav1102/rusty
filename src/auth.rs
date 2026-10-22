@@ -45,6 +45,13 @@ fn save_credentials(creds: &Credentials) -> Result<()> {
     let path = credentials_path()?;
     let data = serde_json::to_string_pretty(creds)?;
     fs::write(&path, data)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+
     Ok(())
 }
 
