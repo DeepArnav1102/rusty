@@ -185,7 +185,8 @@ fn fetch_branch_objects_batch(
             if !to_fetch.is_empty() {
                 let fetched_objs = remote::get_objects_batch(origin, &to_fetch, creds)?;
                 for obj in fetched_objs {
-                    save_object_locally(repo_path, "commits", &obj.hash, &obj.data)?;
+                    let data = obj.bytes()?;
+                    save_object_locally(repo_path, "commits", &obj.hash, &data)?;
                     fetched.insert(obj.hash.clone());
                     println!("  + downloaded commit {}", short_hash(&obj.hash));
                 }
@@ -226,12 +227,13 @@ fn fetch_branch_objects_batch(
             if !to_fetch.is_empty() {
                 let fetched_objs = remote::get_objects_batch(origin, &to_fetch, creds)?;
                 for obj in fetched_objs {
-                    save_object_locally(repo_path, "trees", &obj.hash, &obj.data)?;
+                    let data = obj.bytes()?;
+                    save_object_locally(repo_path, "trees", &obj.hash, &data)?;
                     fetched.insert(obj.hash.clone());
                     println!("  + downloaded tree {}", short_hash(&obj.hash));
 
                     // Inspect tree for child trees and blobs
-                    if let Ok(tree) = serde_json::from_str::<crate::tree::Tree>(&obj.data) {
+                    if let Ok(tree) = serde_json::from_slice::<crate::tree::Tree>(&data) {
                         for entry in tree.entries {
                             if entry.object_type == "tree" {
                                 if !fetched.contains(&entry.object_hash)
@@ -263,7 +265,8 @@ fn fetch_branch_objects_batch(
             for chunk in to_fetch.chunks(100) {
                 let fetched_objs = remote::get_objects_batch(origin, chunk, creds)?;
                 for obj in fetched_objs {
-                    save_object_locally(repo_path, "blobs", &obj.hash, &obj.data)?;
+                    let data = obj.bytes()?;
+                    save_object_locally(repo_path, "blobs", &obj.hash, &data)?;
                     fetched.insert(obj.hash.clone());
                 }
                 println!("  + batch downloaded {} blobs", chunk.len());
@@ -278,12 +281,12 @@ fn object_exists_locally(repo_path: &Path, dir: &str, hash: &str) -> bool {
     repo_path.join("objects").join(dir).join(hash).exists()
 }
 
-fn save_object_locally(repo_path: &Path, dir: &str, hash: &str, data: &str) -> Result<()> {
+fn save_object_locally(repo_path: &Path, dir: &str, hash: &str, data: &[u8]) -> Result<()> {
     let dest = repo_path.join("objects").join(dir).join(hash);
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(dest, data.as_bytes())?;
+    fs::write(dest, data)?;
     Ok(())
 }
 

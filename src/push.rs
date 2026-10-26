@@ -69,11 +69,10 @@ pub fn push(repo_path: &Path) -> Result<()> {
         for (hash, obj_type, path) in chunk {
             let data_bytes = fs::read(path)
                 .with_context(|| format!("Cannot read {} {}", obj_type, hash))?;
-            let data_str = String::from_utf8_lossy(&data_bytes).to_string();
             payloads.push(remote::BatchObjectPayload {
                 object_type: obj_type.to_string(),
                 hash: hash.clone(),
-                data: data_str,
+                data: data_bytes,
             });
         }
 

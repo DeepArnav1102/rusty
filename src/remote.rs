@@ -1,11 +1,16 @@
 use anyhow::{Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use reqwest::blocking::Client;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::auth::Credentials;
+
+const WIRE_ENCODING: &str = "base64";
 
 // ============================================================
 // ADD REMOTE
@@ -78,7 +83,8 @@ pub fn send_object(
     let body = json!({
         "type": object_type,
         "hash": hash,
-        "data": String::from_utf8_lossy(data)
+        "data": BASE64.encode(data),
+        "encoding": WIRE_ENCODING
     });
 
     let url = format!("{}/objects", origin.trim_end_matches('/'));
@@ -412,7 +418,7 @@ pub fn check_objects_batch(
 pub struct BatchObjectPayload {
     pub object_type: String,
     pub hash: String,
-    pub data: String,
+    pub data: Vec<u8>,
 }
 
 pub fn send_objects_batch(
@@ -436,7 +442,8 @@ pub fn send_objects_batch(
             json!({
                 "type": obj.object_type,
                 "hash": obj.hash,
-                "data": obj.data,
+                "data": BASE64.encode(&obj.data),
+                "encoding": WIRE_ENCODING,
             })
         })
         .collect();
@@ -458,7 +465,7 @@ pub fn send_objects_batch(
         Err(_) => {
             // Fallback: send one by one
             for obj in objects {
-                send_object(origin, &obj.object_type, &obj.hash, obj.data.as_bytes(), creds)?;
+                send_object(origin, &obj.object_type, &obj.hash, &obj.data, creds)?;
             }
             return Ok(());
         }
@@ -467,7 +474,7 @@ pub fn send_objects_batch(
     if !response.status().is_success() {
         // Fallback to one-by-one upload
         for obj in objects {
-            send_object(origin, &obj.object_type, &obj.hash, obj.data.as_bytes(), creds)?;
+            send_object(origin, &obj.object_type, &obj.hash, &obj.data, creds)?;
         }
         return Ok(());
     }
@@ -486,6 +493,40 @@ pub struct FetchedObject {
     #[allow(dead_code)]
     pub object_type: String,
     pub data: String,
+    #[serde(default)]
+    pub encoding: Option<String>,
+}
+
+impl FetchedObject {
+    pub fn bytes(&self) -> Result<Vec<u8>> {
+        if self.encoding.as_deref() == Some(WIRE_ENCODING) {
+            return BASE64
+                .decode(self.data.as_bytes())
+                .with_context(|| format!("Object {} from remote is not valid base64", self.hash));
+        }
+
+        let raw = self.data.as_bytes().to_vec();
+        if object_hash_matches(&self.hash, &raw) {
+            return Ok(raw);
+        }
+
+        if let Ok(decoded) = BASE64.decode(self.data.as_bytes()) {
+            if object_hash_matches(&self.hash, &decoded) {
+                return Ok(decoded);
+            }
+        }
+
+        anyhow::bail!(
+            "Object {} from remote is corrupted (content does not match its hash)",
+            self.hash
+        );
+    }
+}
+
+fn object_hash_matches(expected: &str, data: &[u8]) -> bool {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize()) == expected
 }
 
 pub fn get_objects_batch(
@@ -522,16 +563,8 @@ pub fn get_objects_batch(
             let mut list = Vec::new();
             for h in hashes {
                 if let Ok(obj_val) = get_object(origin, h, creds) {
-                    if let (Some(hash), Some(obj_type), Some(data)) = (
-                        obj_val["hash"].as_str(),
-                        obj_val["type"].as_str(),
-                        obj_val["data"].as_str(),
-                    ) {
-                        list.push(FetchedObject {
-                            hash: hash.to_string(),
-                            object_type: obj_type.to_string(),
-                            data: data.to_string(),
-                        });
+                    if let Ok(obj) = serde_json::from_value::<FetchedObject>(obj_val) {
+                        list.push(obj);
                     }
                 }
             }
@@ -544,16 +577,8 @@ pub fn get_objects_batch(
         let mut list = Vec::new();
         for h in hashes {
             if let Ok(obj_val) = get_object(origin, h, creds) {
-                if let (Some(hash), Some(obj_type), Some(data)) = (
-                    obj_val["hash"].as_str(),
-                    obj_val["type"].as_str(),
-                    obj_val["data"].as_str(),
-                ) {
-                    list.push(FetchedObject {
-                        hash: hash.to_string(),
-                        object_type: obj_type.to_string(),
-                        data: data.to_string(),
-                    });
+                if let Ok(obj) = serde_json::from_value::<FetchedObject>(obj_val) {
+                    list.push(obj);
                 }
             }
         }
@@ -565,19 +590,92 @@ pub fn get_objects_batch(
 
     if let Some(arr) = result["objects"].as_array() {
         for item in arr {
-            if let (Some(hash), Some(obj_type), Some(data)) = (
-                item["hash"].as_str(),
-                item["type"].as_str(),
-                item["data"].as_str(),
-            ) {
-                list.push(FetchedObject {
-                    hash: hash.to_string(),
-                    object_type: obj_type.to_string(),
-                    data: data.to_string(),
-                });
+            if let Ok(obj) = serde_json::from_value::<FetchedObject>(item.clone()) {
+                list.push(obj);
             }
         }
     }
 
     Ok(list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PNG_START_BYTES: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0xC3, 0x28, 0x00];
+
+    fn sha256_hex(data: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        hex::encode(hasher.finalize())
+    }
+
+    fn fetched_object(hash: String, data: String, encoding: Option<&str>) -> FetchedObject {
+        FetchedObject {
+            hash,
+            object_type: "blob".to_string(),
+            data,
+            encoding: encoding.map(|e| e.to_string()),
+        }
+    }
+
+    #[test]
+    fn decodes_base64_marked_binary_objects() {
+        let hash = sha256_hex(PNG_START_BYTES);
+        let obj = fetched_object(
+            hash,
+            BASE64.encode(PNG_START_BYTES),
+            Some(WIRE_ENCODING),
+        );
+
+        assert_eq!(obj.bytes().unwrap(), PNG_START_BYTES);
+    }
+
+    #[test]
+    fn decodes_legacy_base64_from_dumb_store_servers() {
+        let hash = sha256_hex(PNG_START_BYTES);
+        let obj = fetched_object(hash, BASE64.encode(PNG_START_BYTES), None);
+
+        assert_eq!(obj.bytes().unwrap(), PNG_START_BYTES);
+    }
+
+    #[test]
+    fn passes_through_legacy_raw_utf8_objects() {
+        let text = b"hello world".to_vec();
+        let hash = sha256_hex(&text);
+        let obj = fetched_object(hash, String::from_utf8(text.clone()).unwrap(), None);
+
+        assert_eq!(obj.bytes().unwrap(), text);
+    }
+
+    #[test]
+    fn rejects_objects_that_do_not_match_their_hash() {
+        let obj = fetched_object(
+            sha256_hex(PNG_START_BYTES),
+            "totally unrelated content".to_string(),
+            None,
+        );
+
+        assert!(obj.bytes().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_base64_with_encoding_marker() {
+        let obj = fetched_object(
+            sha256_hex(PNG_START_BYTES),
+            "!!! not base64 !!!".to_string(),
+            Some(WIRE_ENCODING),
+        );
+
+        assert!(obj.bytes().is_err());
+    }
+
+    #[test]
+    fn batch_payload_base64_round_trips_arbitrary_bytes() {
+        let encoded = BASE64.encode(PNG_START_BYTES);
+        let decoded = BASE64.decode(encoded.as_bytes()).unwrap();
+
+        assert_eq!(decoded, PNG_START_BYTES);
+    }
 }
