@@ -7,6 +7,7 @@ use crate::commit::get_commit;
 use crate::index::Index;
 use crate::merge;
 use crate::objects;
+use crate::path_check::safe_join;
 use crate::tree::load_tree_files;
 
 pub fn checkout(repo_path: &Path, branch: &str) -> Result<()> {
@@ -190,7 +191,7 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
 
     for path in current_index.entries.keys() {
         if !files.contains_key(path) {
-            let file_path = repo_root.join(path);
+            let file_path = safe_join(&repo_root, path)?;
 
             if file_path.exists() {
                 fs::remove_file(&file_path)?;
@@ -204,7 +205,7 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
     // ------------------------------------------------------------
 
     for (path, blob_hash) in files {
-        let file_path = repo_root.join(path);
+        let file_path = safe_join(&repo_root, path)?;
 
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent)?;

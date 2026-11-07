@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::index::Index;
+use crate::path_check;
 
 #[derive(Debug)]
 enum Node {
@@ -151,6 +152,13 @@ fn collect_tree_files(
         .with_context(|| format!("Invalid tree object {}", tree_hash))?;
 
     for entry in tree.entries {
+        // Tree entry names come from downloaded tree objects (remote data).
+        // They are joined onto the repository root by checkout/merge, so a
+        // hostile name like "../pwned.txt" must be rejected right here,
+        // before any consumer ever builds a path from it (AUDIT finding 2).
+        path_check::validate_component(&entry.name)
+            .with_context(|| format!("invalid tree entry name in tree object {}", tree_hash))?;
+
         let relative_path = if prefix.is_empty() {
             entry.name.clone()
         } else {
@@ -175,4 +183,99 @@ fn collect_tree_files(
     }
 
     Ok(())
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    fn repo_with_tree(tree: &Tree) -> (TempDir, String, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+
+        let repo_path = dir.path().join(".rusty");
+
+        fs::create_dir_all(repo_path.join("objects").join("trees")).unwrap();
+
+        let data = serde_json::to_vec(tree).unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(&data);
+
+        let hash = hex::encode(hasher.finalize());
+
+        fs::write(repo_path.join("objects").join("trees").join(&hash), data)
+            .unwrap();
+
+        (dir, hash, repo_path)
+    }
+
+    // ------------------------------------------------------------------
+    // AUDIT finding 2: a hostile tree entry name must be rejected inside
+    // load_tree_files, before checkout/merge can join it onto the repo root.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn load_tree_files_rejects_parent_traversal_entry_name() {
+        let tree = Tree {
+            entries: vec![TreeEntry {
+                name: "../pwned.txt".to_string(),
+                object_hash: "b".repeat(64),
+                object_type: "blob".to_string(),
+            }],
+        };
+
+        let (_dir, hash, repo_path) = repo_with_tree(&tree);
+
+        let err = format!("{}", load_tree_files(&repo_path, &hash).unwrap_err());
+
+        assert!(
+            err.contains("invalid tree entry name") || err.contains("unsafe path name"),
+            "expected a hostile-name rejection, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn load_tree_files_rejects_separator_entry_name() {
+        let tree = Tree {
+            entries: vec![TreeEntry {
+                name: "weird\\name".to_string(),
+                object_hash: "b".repeat(64),
+                object_type: "blob".to_string(),
+            }],
+        };
+
+        let (_dir, hash, repo_path) = repo_with_tree(&tree);
+
+        assert!(load_tree_files(&repo_path, &hash).is_err());
+    }
+
+    #[test]
+    fn load_tree_files_missing_object_errors_normally() {
+        let (_dir, _hash, repo_path) = repo_with_tree(&Tree { entries: vec![] });
+
+        let err = format!(
+            "{}",
+            load_tree_files(
+                &repo_path,
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            )
+            .unwrap_err()
+        );
+
+        assert!(
+            err.contains("Tree object not found"),
+            "expected missing-object error, got: {}",
+            err
+        );
+    }
 }

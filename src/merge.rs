@@ -7,6 +7,7 @@ use std::path::Path;
 use crate::commit::get_commit;
 use crate::index::Index;
 use crate::objects;
+use crate::path_check::safe_join;
 use crate::repository::get_head_commit;
 use crate::tree::load_tree_files;
 
@@ -287,7 +288,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
     // Remove files deleted by merge.
     for path in ours_files.keys() {
         if !plan.files.contains_key(path) && !conflict_paths.contains(path) {
-            let full_path = repo_root.join(path);
+            let full_path = safe_join(&repo_root, path)?;
 
             if full_path.exists() {
                 fs::remove_file(&full_path)?;
@@ -297,7 +298,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
     // Write clean merged files.
     for (path, blob_hash) in &plan.files {
-        let full_path = repo_root.join(path);
+        let full_path = safe_join(&repo_root, path)?;
 
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
@@ -319,7 +320,7 @@ pub fn merge(repo_path: &Path, target: &str) -> Result<()> {
 
     for conflict in &plan.conflicts {
         let path = &conflict.path;
-        let full_path = repo_root.join(path);
+        let full_path = safe_join(&repo_root, path)?;
 
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
@@ -585,7 +586,7 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
 
     for path in current_index.entries.keys() {
         if !files.contains_key(path) {
-            let file_path = repo_root.join(path);
+            let file_path = safe_join(&repo_root, path)?;
 
             if file_path.exists() {
                 fs::remove_file(&file_path)?;
@@ -594,7 +595,7 @@ fn restore_working_tree(repo_path: &Path, files: &BTreeMap<String, String>) -> R
     }
 
     for (path, blob_hash) in files {
-        let file_path = repo_root.join(path);
+        let file_path = safe_join(&repo_root, path)?;
 
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent)?;
@@ -853,7 +854,7 @@ fn apply_tree(repo_path: &Path, target_files: &BTreeMap<String, String>) -> Resu
     // Remove files that no longer exist in target.
     for path in current_files.keys() {
         if !target_files.contains_key(path) {
-            let full_path = repo_root.join(path);
+            let full_path = safe_join(&repo_root, path)?;
 
             if full_path.exists() {
                 fs::remove_file(&full_path)?;
@@ -863,7 +864,7 @@ fn apply_tree(repo_path: &Path, target_files: &BTreeMap<String, String>) -> Resu
 
     // Write target files.
     for (path, blob_hash) in target_files {
-        let full_path = repo_root.join(path);
+        let full_path = safe_join(&repo_root, path)?;
 
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;

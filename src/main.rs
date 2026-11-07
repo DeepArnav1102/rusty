@@ -12,6 +12,7 @@ mod index;
 mod log;
 mod merge;
 mod objects;
+mod path_check;
 mod pull;
 mod push;
 mod remote;

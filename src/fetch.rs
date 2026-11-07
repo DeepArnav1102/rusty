@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::auth::Credentials;
+use crate::path_check::{validate_object_hash, validate_ref_path};
 use crate::remote;
 
 pub fn fetch(repo_path: &Path) -> Result<()> {
@@ -61,6 +62,12 @@ pub fn fetch(repo_path: &Path) -> Result<()> {
     // ------------------------------------------------------------
 
     for (branch, commit_hash) in &remote_refs {
+        // The branch name comes from the server's /refs endpoint. It becomes
+        // a file path under refs/remotes/origin, so it must be validated
+        // before it is used (AUDIT finding 2). An invalid name aborts the
+        // ref update; objects fetched earlier stay cached and are reused.
+        validate_ref_path(branch)?;
+
         let ref_path = remote_ref_dir.join(branch);
 
         if let Some(parent) = ref_path.parent() {
@@ -282,6 +289,10 @@ fn object_exists_locally(repo_path: &Path, dir: &str, hash: &str) -> bool {
 }
 
 fn save_object_locally(repo_path: &Path, dir: &str, hash: &str, data: &[u8]) -> Result<()> {
+    // The hash comes from the download response and becomes part of a file
+    // path under .rusty/objects — validate its shape first (AUDIT finding 2).
+    validate_object_hash(hash)?;
+
     let dest = repo_path.join("objects").join(dir).join(hash);
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
